@@ -1,5 +1,8 @@
 import Hero from "../components/Hero";
 import Menu from "../components/Menu";
+import About from "../components/About";
+import InfoSection from "../components/InfoSection";
+import Footer from "../components/Footer";
 
 export default function Page() {
   return (
@@ -8,6 +11,9 @@ export default function Page() {
       <div id="menu">
         <Menu />
       </div>
+      <About />
+      <InfoSection />
+      <Footer />
     </main>
   );
 }

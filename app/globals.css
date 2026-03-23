@@ -1,26 +1,130 @@
-@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400;1,700&family=DM+Sans:wght@300;400;500&display=swap');
 
+/* ─────────────────────────────────────────
+   La Piazzetta — Design Tokens
+   Warm Italian trattoria palette
+───────────────────────────────────────── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Brand colors */
+  --color-tomato:       #B03A2E;   /* deep tomato red — primary */
+  --color-tomato-light: #C9503F;   /* hover state */
+  --color-tomato-dark:  #7D2820;   /* pressed / active */
+  --color-gold:         #C9923A;   /* accent — like aged olive oil */
+  --color-gold-light:   #E5B060;   /* highlight */
+
+  /* Neutrals */
+  --color-cream:        #FDF6EC;   /* warm off-white — page background */
+  --color-cream-dark:   #F5EADA;   /* card background */
+  --color-parchment:    #EDE0CC;   /* subtle borders */
+  --color-charcoal:     #1C1C1A;   /* primary text */
+  --color-ink:          #3A3A36;   /* body text */
+  --color-stone:        #7A7770;   /* muted / secondary text */
+  --color-stone-light:  #B0ACA5;   /* disabled / placeholder */
+
+  /* Surface */
+  --color-surface:      #FFFFFF;
+  --color-surface-warm: #FAF3E8;
+
+  /* Semantic */
+  --color-spicy:        #D94F1E;
+  --color-veg:          #3A7A3A;
+  --color-popular:      #C9923A;
+
+  /* Typography */
+  --font-display: 'Playfair Display', Georgia, serif;
+  --font-body:    'DM Sans', sans-serif;
+
+  /* Spacing scale */
+  --space-xs:  4px;
+  --space-sm:  8px;
+  --space-md:  16px;
+  --space-lg:  24px;
+  --space-xl:  40px;
+  --space-2xl: 64px;
+  --space-3xl: 96px;
+
+  /* Radius */
+  --radius-sm:  6px;
+  --radius-md:  12px;
+  --radius-lg:  20px;
+  --radius-pill: 999px;
+
+  /* Shadows */
+  --shadow-card: 0 2px 12px rgba(28, 28, 26, 0.08);
+  --shadow-card-hover: 0 8px 32px rgba(28, 28, 26, 0.14);
+  --shadow-button: 0 2px 8px rgba(176, 58, 46, 0.30);
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-base: 250ms ease;
+  --transition-slow: 400ms ease;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* ─────────────────────────────────────────
+   Base reset & defaults
+───────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--color-ink);
+  background-color: var(--color-cream);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
+
+h1, h2, h3, h4 {
+  font-family: var(--font-display);
+  color: var(--color-charcoal);
+  line-height: 1.15;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img {
+  display: block;
+  max-width: 100%;
+}
+
+/* ─────────────────────────────────────────
+   Utility classes
+───────────────────────────────────────── */
+.container {
+  width: 100%;
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 var(--space-lg);
+}
+
+.section-title {
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
+  color: var(--color-charcoal);
+  margin-bottom: var(--space-lg);
+}
+
+.section-title span {
+  color: var(--color-tomato);
+  font-style: italic;
+}
+
+/* ─────────────────────────────────────────
+   Scrollbar
+───────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--color-cream-dark); }
+::-webkit-scrollbar-thumb { background: var(--color-parchment); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-stone-light); }
