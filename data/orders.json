@@ -17,5 +17,24 @@
     "total": 7.5,
     "status": "new",
     "placedAt": "2026-03-24T20:11:31.830Z"
+  },
+  "mn5589rkQU3D": {
+    "id": "mn5589rkQU3D",
+    "clientName": "Teo lazo",
+    "phone": "3256649766",
+    "address": "Via milano",
+    "lat": null,
+    "lng": null,
+    "items": [
+      {
+        "id": "marinara",
+        "name": "Marinara",
+        "qty": 2,
+        "price": 6.5
+      }
+    ],
+    "total": 13,
+    "status": "new",
+    "placedAt": "2026-03-24T21:45:18.704Z"
   }
 }
