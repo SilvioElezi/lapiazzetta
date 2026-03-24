@@ -1,0 +1,21 @@
+{
+  "mn51vo1iQIKD": {
+    "id": "mn51vo1iQIKD",
+    "clientName": "Niku",
+    "phone": "3695233652",
+    "address": "Via chiari",
+    "lat": null,
+    "lng": null,
+    "items": [
+      {
+        "id": "margherita",
+        "name": "Margherita",
+        "qty": 1,
+        "price": 7.5
+      }
+    ],
+    "total": 7.5,
+    "status": "new",
+    "placedAt": "2026-03-24T20:11:31.830Z"
+  }
+}
