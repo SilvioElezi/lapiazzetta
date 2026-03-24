@@ -14,31 +14,23 @@ function elapsed(iso: string) {
   if (mins === 1) return "1 min fa";
   return `${mins} min fa`;
 }
-
-function newId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-}
+function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
 
 // ─── ORDERS TAB ───────────────────────────────────────────
 function OrdersTab() {
   const [orders, setOrders] = useState<Order[]>([]);
-
   const fetchOrders = useCallback(async () => {
     try { const r = await fetch("/api/orders"); setOrders(await r.json()); } catch {}
   }, []);
-
   useEffect(() => {
     fetchOrders();
     const poll = setInterval(fetchOrders, 3000);
     return () => clearInterval(poll);
   }, [fetchOrders]);
-
-  const markReady = async (id: string) => { await fetch(`/api/order/${id}`, { method: "PATCH" }); fetchOrders(); };
+  const markReady     = async (id: string) => { await fetch(`/api/order/${id}`, { method: "PATCH" });  fetchOrders(); };
   const markDelivered = async (id: string) => { await fetch(`/api/order/${id}`, { method: "DELETE" }); fetchOrders(); };
-
   const newOrders   = orders.filter((o) => o.status === "new");
   const readyOrders = orders.filter((o) => o.status === "ready");
-
   return (
     <div className="tab-content">
       <div className="orders-stats">
@@ -46,9 +38,8 @@ function OrdersTab() {
         <span className="stat-pill stat-pill--ready">✅ {readyOrders.length} pronti</span>
         <span className="shop__live">● Live</span>
       </div>
-
       {orders.length === 0 ? (
-        <div className="empty-state"><span>🍃</span><p>Nessun ordine attivo</p><small>Gli ordini appariranno qui automaticamente</small></div>
+        <div className="empty-state"><span>🍃</span><p>Nessun ordine attivo</p><small>Gli ordini appariranno automaticamente</small></div>
       ) : (
         <div className="orders-grid">
           {orders.map((order) => (
@@ -78,7 +69,7 @@ function OrdersTab() {
               </ul>
               <div className="order-total"><span>Totale</span><span className="order-total__amt">€{order.total.toFixed(2)}</span></div>
               <div className="order-actions">
-                {order.status === "new" && <button className="action-btn action-btn--ready" onClick={() => markReady(order.id)}>✅ Ordine pronto</button>}
+                {order.status === "new"   && <button className="action-btn action-btn--ready"     onClick={() => markReady(order.id)}>✅ Ordine pronto</button>}
                 {order.status === "ready" && <button className="action-btn action-btn--delivered" onClick={() => markDelivered(order.id)}>🛵 Consegnato</button>}
               </div>
             </div>
@@ -98,14 +89,10 @@ function MenuTab() {
   const [newCatName, setNewCatName] = useState("");
   const [newCatEmoji, setNewCatEmoji] = useState("🍕");
   const [showNewCat, setShowNewCat] = useState(false);
-
-  // blank item template
   const blankItem = (): MenuItem => ({ id: newId(), name: "", ingredients: "", price: 0, popular: false, spicy: false, vegetarian: false, active: true });
   const [draft, setDraft] = useState<MenuItem>(blankItem());
 
-  useEffect(() => {
-    fetch("/api/menu").then((r) => r.json()).then(setMenu).catch(() => {});
-  }, []);
+  useEffect(() => { fetch("/api/menu").then((r) => r.json()).then(setMenu).catch(() => {}); }, []);
 
   const saveMenu = async (updated: MenuCategory[]) => {
     setSaving(true);
@@ -113,44 +100,34 @@ function MenuTab() {
     setSaving(false); setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
-
   const toggleActive = (catIdx: number, itemIdx: number) => {
-    const updated = menu.map((cat, ci) => ci !== catIdx ? cat : {
-      ...cat, items: cat.items.map((item, ii) => ii !== itemIdx ? item : { ...item, active: !item.active })
-    });
+    const updated = menu.map((cat, ci) => ci !== catIdx ? cat : { ...cat, items: cat.items.map((item, ii) => ii !== itemIdx ? item : { ...item, active: !item.active }) });
     setMenu(updated); saveMenu(updated);
   };
-
   const deleteItem = (catIdx: number, itemIdx: number) => {
     if (!confirm("Eliminare questo prodotto?")) return;
     const updated = menu.map((cat, ci) => ci !== catIdx ? cat : { ...cat, items: cat.items.filter((_, ii) => ii !== itemIdx) });
     setMenu(updated); saveMenu(updated);
   };
-
   const deleteCategory = (catIdx: number) => {
-    if (!confirm(`Eliminare la categoria "${menu[catIdx].category}" e tutti i suoi prodotti?`)) return;
+    if (!confirm(`Eliminare la categoria "${menu[catIdx].category}"?`)) return;
     const updated = menu.filter((_, ci) => ci !== catIdx);
     setMenu(updated); saveMenu(updated);
   };
-
   const openEdit = (catIdx: number, itemIdx: number | null) => {
     setEditingItem({ catIdx, itemIdx });
     setDraft(itemIdx === null ? blankItem() : { ...menu[catIdx].items[itemIdx] });
   };
-
   const saveItem = () => {
     if (!draft.name.trim() || !editingItem) return;
     const { catIdx, itemIdx } = editingItem;
     const updated = menu.map((cat, ci) => {
       if (ci !== catIdx) return cat;
-      const items = itemIdx === null
-        ? [...cat.items, draft]
-        : cat.items.map((item, ii) => ii === itemIdx ? draft : item);
+      const items = itemIdx === null ? [...cat.items, draft] : cat.items.map((item, ii) => ii === itemIdx ? draft : item);
       return { ...cat, items };
     });
     setMenu(updated); saveMenu(updated); setEditingItem(null);
   };
-
   const addCategory = () => {
     if (!newCatName.trim()) return;
     const updated = [...menu, { category: newCatName.trim(), emoji: newCatEmoji, items: [] }];
@@ -163,12 +140,11 @@ function MenuTab() {
       <div className="menu-toolbar">
         <span className="menu-toolbar__title">{menu.reduce((s, c) => s + c.items.length, 0)} prodotti in {menu.length} categorie</span>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          {saved && <span className="saved-badge">✓ Salvato</span>}
-          {saving && <span className="saving-badge">Salvataggio…</span>}
+          {saved   && <span className="saved-badge">✓ Salvato</span>}
+          {saving  && <span className="saving-badge">Salvataggio…</span>}
           <button className="btn-add-cat" onClick={() => setShowNewCat(!showNewCat)}>+ Categoria</button>
         </div>
       </div>
-
       {showNewCat && (
         <div className="new-cat-form">
           <input value={newCatEmoji} onChange={(e) => setNewCatEmoji(e.target.value)} placeholder="🍕" className="emoji-input" />
@@ -177,7 +153,6 @@ function MenuTab() {
           <button className="btn-cancel" onClick={() => setShowNewCat(false)}>Annulla</button>
         </div>
       )}
-
       {menu.map((cat, catIdx) => (
         <div key={cat.category} className="menu-section">
           <div className="menu-section__head">
@@ -203,19 +178,15 @@ function MenuTab() {
                 <p className="menu-item-row__ing">{item.ingredients}</p>
                 <div className="menu-item-row__actions">
                   <button className="btn-sm btn-sm--edit" onClick={() => openEdit(catIdx, itemIdx)}>✏️ Modifica</button>
-                  <button className="btn-sm" onClick={() => toggleActive(catIdx, itemIdx)}>
-                    {item.active ? "⏸ Disattiva" : "▶ Attiva"}
-                  </button>
+                  <button className="btn-sm" onClick={() => toggleActive(catIdx, itemIdx)}>{item.active ? "⏸ Disattiva" : "▶ Attiva"}</button>
                   <button className="btn-sm btn-sm--del" onClick={() => deleteItem(catIdx, itemIdx)}>🗑</button>
                 </div>
               </div>
             ))}
-            {cat.items.length === 0 && <p className="empty-cat">Nessun prodotto. Clicca "+ Prodotto" per aggiungerne uno.</p>}
+            {cat.items.length === 0 && <p className="empty-cat">Nessun prodotto. Clicca &quot;+ Prodotto&quot; per aggiungerne uno.</p>}
           </div>
         </div>
       ))}
-
-      {/* Edit / Add item modal */}
       {editingItem !== null && (
         <>
           <div className="modal-backdrop" onClick={() => setEditingItem(null)} />
@@ -259,23 +230,42 @@ function MenuTab() {
 
 // ─── ROOT PAGE ─────────────────────────────────────────────
 export default function ShopPage() {
-  const [authed, setAuthed] = useState(false);
+  // ✅ FIX: persist auth in localStorage so closing the tab doesn't log out
+  const [authed, setAuthed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("shop_authed") === "1";
+  });
   const [pwd, setPwd] = useState("");
   const [tab, setTab] = useState<"orders" | "menu">("orders");
+
+  const login = () => {
+    if (pwd === SHOP_PASSWORD) {
+      localStorage.setItem("shop_authed", "1");
+      setAuthed(true);
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem("shop_authed");
+    setAuthed(false);
+    setPwd("");
+  };
 
   if (!authed) return (
     <div className="login">
       <div className="login__card">
         <h1 className="login__title">🍕 La Piazzetta</h1>
         <p className="login__sub">Dashboard</p>
-        <input type="password" placeholder="Password" value={pwd}
+        <input
+          type="password" placeholder="Password" value={pwd}
           onChange={(e) => setPwd(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && pwd === SHOP_PASSWORD && setAuthed(true)}
-          className="login__input" autoFocus />
-        <button className="login__btn" onClick={() => pwd === SHOP_PASSWORD && setAuthed(true)}>Accedi</button>
+          onKeyDown={(e) => e.key === "Enter" && login()}
+          className="login__input" autoFocus
+        />
+        <button className="login__btn" onClick={login}>Accedi</button>
         {pwd && pwd !== SHOP_PASSWORD && <p className="login__err">Password errata</p>}
       </div>
-      <style>{baseStyles}</style>
+      <style>{styles}</style>
     </div>
   );
 
@@ -287,22 +277,21 @@ export default function ShopPage() {
           <nav className="shop__tabs">
             <button className={`shop__tab${tab === "orders" ? " shop__tab--active" : ""}`} onClick={() => setTab("orders")}>📋 Ordini</button>
             <button className={`shop__tab${tab === "menu" ? " shop__tab--active" : ""}`} onClick={() => setTab("menu")}>🍕 Menu</button>
+            <button className="shop__tab shop__tab--logout" onClick={logout}>🚪 Esci</button>
           </nav>
         </div>
       </header>
       <main className="shop__main">
         {tab === "orders" ? <OrdersTab /> : <MenuTab />}
       </main>
-      <style>{baseStyles}</style>
+      <style>{styles}</style>
     </div>
   );
 }
 
-const baseStyles = `
+const styles = `
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'DM Sans',sans-serif;background:#F5EADA}
-
-/* Login */
 .login{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#1C1C1A;padding:24px}
 .login__card{background:#FDF6EC;border-radius:20px;padding:40px 32px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:16px;box-shadow:0 20px 60px rgba(0,0,0,.4)}
 .login__title{font-family:Georgia,serif;font-size:1.8rem;font-weight:700;color:#1C1C1A;text-align:center}
@@ -312,19 +301,17 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA}
 .login__btn{padding:13px;background:#B03A2E;color:#fff;border:none;border-radius:10px;font-size:.95rem;font-weight:500;cursor:pointer;transition:background .15s}
 .login__btn:hover{background:#C9503F}
 .login__err{font-size:.8rem;color:#B03A2E;text-align:center}
-
-/* Shop shell */
 .shop__header{background:#1C1C1A;position:sticky;top:0;z-index:10;box-shadow:0 2px 12px rgba(0,0,0,.2)}
 .shop__header-inner{max-width:1100px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:16px;height:56px}
 .shop__logo{font-family:Georgia,serif;font-size:1.1rem;font-weight:700;color:#FDF6EC;flex:1}
 .shop__tabs{display:flex;gap:4px}
-.shop__tab{padding:7px 16px;background:rgba(253,246,236,.08);border:none;color:rgba(253,246,236,.6);border-radius:8px;cursor:pointer;font-size:.85rem;font-weight:500;transition:background .15s,color .15s}
+.shop__tab{padding:7px 14px;background:rgba(253,246,236,.08);border:none;color:rgba(253,246,236,.6);border-radius:8px;cursor:pointer;font-size:.83rem;font-weight:500;transition:background .15s,color .15s}
 .shop__tab:hover{background:rgba(253,246,236,.15);color:#FDF6EC}
 .shop__tab--active{background:rgba(253,246,236,.18);color:#FDF6EC}
+.shop__tab--logout{color:rgba(253,100,80,.7)}
+.shop__tab--logout:hover{background:rgba(253,100,80,.12);color:#ff6450}
 .shop__main{max-width:1100px;margin:0 auto;padding:20px}
 .tab-content{display:flex;flex-direction:column;gap:16px}
-
-/* Orders tab */
 .orders-stats{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .stat-pill{font-size:.75rem;font-weight:500;padding:5px 12px;border-radius:999px}
 .stat-pill--new{background:#FEF3DB;color:#8A5E12}
@@ -335,7 +322,7 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA}
 .empty-state span{font-size:2.5rem}
 .empty-state p{font-size:1rem;font-weight:500;color:#1C1C1A}
 .orders-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}
-.order-card{background:#fff;border:2px solid #EDE0CC;border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px;box-shadow:0 2px 12px rgba(28,28,26,.07);transition:border-color .2s}
+.order-card{background:#fff;border:2px solid #EDE0CC;border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:10px;box-shadow:0 2px 12px rgba(28,28,26,.07)}
 .order-card--ready{border-color:#4CAF50;background:#F1F8F1}
 .order-card__head{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
 .order-id{font-size:.7rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#7A7770;display:block;margin-bottom:4px}
@@ -358,13 +345,11 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA}
 .action-btn:hover{opacity:.88;transform:translateY(-1px)}
 .action-btn--ready{background:#4CAF50;color:#fff}
 .action-btn--delivered{background:#1C1C1A;color:#FDF6EC}
-
-/* Menu tab */
 .menu-toolbar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#fff;border:1px solid #EDE0CC;border-radius:12px}
 .menu-toolbar__title{font-size:.85rem;color:#7A7770}
 .saved-badge{font-size:.78rem;font-weight:500;color:#2E7D32;background:#EBF5EB;padding:4px 10px;border-radius:999px}
 .saving-badge{font-size:.78rem;color:#7A7770}
-.btn-add-cat{padding:8px 14px;background:#1C1C1A;color:#FDF6EC;border:none;border-radius:8px;font-size:.82rem;font-weight:500;cursor:pointer;transition:background .15s}
+.btn-add-cat{padding:8px 14px;background:#1C1C1A;color:#FDF6EC;border:none;border-radius:8px;font-size:.82rem;font-weight:500;cursor:pointer}
 .btn-add-cat:hover{background:#3A3A36}
 .new-cat-form{display:flex;gap:8px;align-items:center;padding:14px 16px;background:#fff;border:1px solid #EDE0CC;border-radius:12px;flex-wrap:wrap}
 .emoji-input{width:50px;padding:8px;border:1.5px solid #EDE0CC;border-radius:8px;font-size:1.2rem;text-align:center}
@@ -375,7 +360,7 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA}
 .menu-section{background:#fff;border:1px solid #EDE0CC;border-radius:12px;overflow:hidden}
 .menu-section__head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#F5EADA;border-bottom:1px solid #EDE0CC}
 .menu-section__title{font-family:Georgia,serif;font-size:1rem;font-weight:700;color:#1C1C1A}
-.btn-sm{padding:5px 10px;border:1px solid #EDE0CC;background:#fff;border-radius:6px;font-size:.75rem;cursor:pointer;transition:background .15s,border-color .15s;white-space:nowrap}
+.btn-sm{padding:5px 10px;border:1px solid #EDE0CC;background:#fff;border-radius:6px;font-size:.75rem;cursor:pointer;white-space:nowrap;transition:background .15s}
 .btn-sm:hover{background:#F5EADA}
 .btn-sm--add{border-color:#B03A2E;color:#B03A2E}
 .btn-sm--add:hover{background:#FFF0EE}
@@ -383,20 +368,19 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA}
 .btn-sm--del:hover{background:#ffebee}
 .btn-sm--edit{border-color:#B0BEC5;color:#455A64}
 .menu-items-list{display:flex;flex-direction:column}
-.menu-item-row{padding:12px 16px;border-bottom:1px solid #F5EADA;display:flex;flex-direction:column;gap:4px;transition:background .15s}
+.menu-item-row{padding:12px 16px;border-bottom:1px solid #F5EADA;display:flex;flex-direction:column;gap:4px}
 .menu-item-row:last-child{border-bottom:none}
 .menu-item-row:hover{background:#FAFAF8}
 .menu-item-row--inactive{opacity:.5}
 .menu-item-row__main{display:flex;align-items:center;gap:8px}
 .menu-item-row__name{font-size:.9rem;font-weight:500;color:#1C1C1A;flex:1}
 .menu-item-row__price{font-size:.9rem;font-weight:600;color:#B03A2E;white-space:nowrap}
+.menu-item-row__flags{display:flex;gap:4px}
 .menu-item-row__ing{font-size:.78rem;color:#7A7770;line-height:1.4}
 .menu-item-row__actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
 .flag{font-size:.75rem}
 .flag--off{background:#FDECEA;color:#B71C1C;font-size:.65rem;font-weight:600;padding:1px 6px;border-radius:4px}
 .empty-cat{padding:12px 16px;font-size:.82rem;color:#B0ACA5;font-style:italic}
-
-/* Item modal */
 .modal-backdrop{position:fixed;inset:0;z-index:300;background:rgba(28,28,26,.5);backdrop-filter:blur(2px)}
 .modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:301;background:#fff;border-radius:16px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(28,28,26,.25)}
 .modal__head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #EDE0CC;position:sticky;top:0;background:#fff}
@@ -412,7 +396,7 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA}
 .flag-toggle{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;color:#3A3A36;user-select:none}
 .flag-toggle input{width:16px;height:16px;cursor:pointer;accent-color:#B03A2E}
 .btn-cancel-modal{padding:10px 18px;background:transparent;border:1px solid #EDE0CC;border-radius:8px;font-size:.88rem;cursor:pointer;color:#7A7770}
-.btn-save-modal{padding:10px 20px;background:#B03A2E;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:500;cursor:pointer;transition:background .15s}
+.btn-save-modal{padding:10px 20px;background:#B03A2E;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:500;cursor:pointer}
 .btn-save-modal:hover:not(:disabled){background:#C9503F}
 .btn-save-modal:disabled{opacity:.5;cursor:not-allowed}
 `;
