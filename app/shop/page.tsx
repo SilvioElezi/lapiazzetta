@@ -1,10 +1,9 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
-import { getSupabase } from "@/lib/supabase";
-import type { Order, MenuCategory, MenuItem } from "../../lib/types";
+import { supabase } from "../../lib/supabase";
+import type { Order, MenuCategory, MenuItem, StaffUser, StaffRole, WeekHours, DayHours } from "../../lib/types";
 
-const SHOP_PASSWORD = process.env.NEXT_PUBLIC_SHOP_PASSWORD ?? "piazzetta2024";
-
+// ─── HELPERS ──────────────────────────────────────────────
 function elapsed(iso: string) {
   const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
   if (mins < 1) return "adesso";
@@ -13,28 +12,75 @@ function elapsed(iso: string) {
 }
 function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 5); }
 
+const DAY_LABELS: Record<string, string> = {
+  monday: "Lunedì", tuesday: "Martedì", wednesday: "Mercoledì",
+  thursday: "Giovedì", friday: "Venerdì", saturday: "Sabato", sunday: "Domenica"
+};
+const DAY_KEYS = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
+
+// ─── LOGIN ────────────────────────────────────────────────
+function LoginScreen({ onLogin }: { onLogin: (user: StaffUser) => void }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError]       = useState("");
+  const [loading, setLoading]   = useState(false);
+
+  const login = async () => {
+    if (!username || !password) return;
+    setLoading(true); setError("");
+    try {
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error ?? "Errore"); }
+      else {
+        localStorage.setItem("shop_user", JSON.stringify(data.user));
+        onLogin(data.user);
+      }
+    } catch { setError("Errore di connessione"); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div className="login">
+      <div className="login__card">
+        <div className="login__logo">🍕</div>
+        <h1 className="login__title">La Piazzetta</h1>
+        <p className="login__sub">Staff Dashboard</p>
+        <input className="login__input" type="text" placeholder="Username"
+          value={username} onChange={(e) => setUsername(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && login()} autoFocus />
+        <input className="login__input" type="password" placeholder="Password"
+          value={password} onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && login()} />
+        <button className="login__btn" onClick={login} disabled={loading}>
+          {loading ? "Accesso…" : "Accedi"}
+        </button>
+        {error && <p className="login__err">{error}</p>}
+      </div>
+    </div>
+  );
+}
+
 // ─── ORDERS TAB ───────────────────────────────────────────
-function OrdersTab() {
+function OrdersTab({ role }: { role: StaffRole }) {
   const [orders, setOrders] = useState<Order[]>([]);
-  const supabase = getSupabase();
   const [, setTick] = useState(0);
 
   const fetchOrders = useCallback(async () => {
     const res = await fetch("/api/orders");
-    const data = await res.json();
-    setOrders(data);
+    setOrders(await res.json());
   }, []);
 
   useEffect(() => {
     fetchOrders();
-    // Real-time subscription — no more polling!
     const channel = supabase
-      .channel("orders-changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => {
-        fetchOrders();
-      })
+      .channel("orders-rt")
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, fetchOrders)
       .subscribe();
-    // Tick every 30s to refresh elapsed times
     const tick = setInterval(() => setTick((t) => t + 1), 30000);
     return () => { supabase.removeChannel(channel); clearInterval(tick); };
   }, [fetchOrders]);
@@ -42,21 +88,32 @@ function OrdersTab() {
   const markReady     = async (id: string) => { await fetch(`/api/order/${id}`, { method: "PATCH" }); };
   const markDelivered = async (id: string) => { await fetch(`/api/order/${id}`, { method: "DELETE" }); };
 
+  // Filter by role
+  const visible = orders.filter((o) => {
+    if (role === "delivery")  return o.status === "ready";
+    return true; // reception + admin see all
+  });
+
   const newOrders   = orders.filter((o) => o.status === "new");
   const readyOrders = orders.filter((o) => o.status === "ready");
 
   return (
     <div className="tab-content">
       <div className="orders-stats">
-        <span className="stat-pill stat-pill--new">🆕 {newOrders.length} nuovi</span>
+        {role !== "delivery" && <span className="stat-pill stat-pill--new">🆕 {newOrders.length} nuovi</span>}
         <span className="stat-pill stat-pill--ready">✅ {readyOrders.length} pronti</span>
         <span className="shop__live">● Real-time</span>
       </div>
-      {orders.length === 0 ? (
-        <div className="empty-state"><span>🍃</span><p>Nessun ordine attivo</p><small>Gli ordini appariranno automaticamente</small></div>
+
+      {visible.length === 0 ? (
+        <div className="empty-state">
+          <span>{role === "delivery" ? "🛵" : "🍃"}</span>
+          <p>{role === "delivery" ? "Nessuna consegna pronta" : "Nessun ordine attivo"}</p>
+          <small>{role === "delivery" ? "Gli ordini pronti appariranno qui" : "Gli ordini appariranno automaticamente"}</small>
+        </div>
       ) : (
         <div className="orders-grid">
-          {orders.map((order) => (
+          {visible.map((order) => (
             <div key={order.id} className={`order-card${order.status === "ready" ? " order-card--ready" : ""}`}>
               <div className="order-card__head">
                 <div>
@@ -70,7 +127,8 @@ function OrdersTab() {
               <div className="order-client">
                 <p className="order-client__name">{order.client_name}</p>
                 <a href={`tel:${order.phone}`} className="order-client__link">📞 {order.phone}</a>
-                <a href={order.lat ? `https://maps.google.com/?q=${order.lat},${order.lng}` : `https://maps.google.com/?q=${encodeURIComponent(order.address)}`} target="_blank" rel="noopener noreferrer" className="order-client__link">📍 {order.address}</a>
+                <a href={order.lat ? `https://maps.google.com/?q=${order.lat},${order.lng}` : `https://maps.google.com/?q=${encodeURIComponent(order.address)}`}
+                  target="_blank" rel="noopener noreferrer" className="order-client__link">📍 {order.address}</a>
               </div>
               <ul className="order-items">
                 {order.items.map((item) => (
@@ -81,10 +139,30 @@ function OrdersTab() {
                   </li>
                 ))}
               </ul>
-              <div className="order-total"><span>Totale</span><span className="order-total__amt">€{order.total.toFixed(2)}</span></div>
+              <div className="order-total">
+                <span>Totale</span>
+                <span className="order-total__amt">€{order.total.toFixed(2)}</span>
+              </div>
               <div className="order-actions">
-                {order.status === "new"   && <button className="action-btn action-btn--ready"     onClick={() => markReady(order.id)}>✅ Ordine pronto</button>}
-                {order.status === "ready" && <button className="action-btn action-btn--delivered" onClick={() => markDelivered(order.id)}>🛵 Consegnato</button>}
+                {/* Reception + admin can mark ready */}
+                {order.status === "new" && role !== "delivery" && (
+                  <button className="action-btn action-btn--ready" onClick={() => markReady(order.id)}>
+                    ✅ Ordine pronto
+                  </button>
+                )}
+                {/* Delivery + admin can mark delivered */}
+                {order.status === "ready" && role !== "reception" && (
+                  <button className="action-btn action-btn--delivered" onClick={() => markDelivered(order.id)}>
+                    🛵 Consegnato
+                  </button>
+                )}
+                {/* Admin sees both buttons always */}
+                {order.status === "ready" && role === "admin" && (
+                  <button className="action-btn action-btn--ready" onClick={() => markReady(order.id)}
+                    style={{background:"#888"}}>
+                    ↩ Rimetti nuovo
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -94,99 +172,179 @@ function OrdersTab() {
   );
 }
 
-// ─── MENU TAB ─────────────────────────────────────────────
-function MenuTab() {
-  const [menu, setMenu] = useState<MenuCategory[]>([]);
+// ─── SETTINGS TAB (admin only) ────────────────────────────
+function SettingsTab() {
+  const [onlineOrders, setOnlineOrders] = useState(true);
+  const [hours, setHours] = useState<WeekHours | null>(null);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved]   = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings").then((r) => r.json()).then((data) => {
+      setOnlineOrders(data.online_orders ?? true);
+      setHours(data.hours ?? null);
+    });
+  }, []);
+
+  const saveSetting = async (key: string, value: any) => {
+    setSaving(true);
+    await fetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, value }),
+    });
+    setSaving(false); setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  const toggleOnline = async () => {
+    const next = !onlineOrders;
+    setOnlineOrders(next);
+    await saveSetting("online_orders", next);
+  };
+
+  const updateDay = (day: string, field: keyof DayHours, val: any) => {
+    if (!hours) return;
+    const updated = { ...hours, [day]: { ...hours[day as keyof WeekHours], [field]: val } };
+    setHours(updated);
+  };
+
+  const saveHours = () => saveSetting("hours", hours);
+
+  return (
+    <div className="tab-content">
+
+      {/* Online orders toggle */}
+      <div className="settings-card">
+        <div className="settings-card__head">
+          <div>
+            <h3 className="settings-card__title">Ordini online</h3>
+            <p className="settings-card__sub">Disattiva per bloccare nuovi ordini dal sito</p>
+          </div>
+          <button
+            className={`toggle-btn${onlineOrders ? " toggle-btn--on" : " toggle-btn--off"}`}
+            onClick={toggleOnline}
+          >
+            <span className="toggle-btn__dot" />
+            <span className="toggle-btn__label">{onlineOrders ? "Attivi" : "Disattivi"}</span>
+          </button>
+        </div>
+        {!onlineOrders && (
+          <div className="settings-card__warning">
+            ⚠️ Gli ordini online sono disattivati. I clienti vedranno un messaggio di chiusura.
+          </div>
+        )}
+      </div>
+
+      {/* Opening hours */}
+      <div className="settings-card">
+        <div className="settings-card__head">
+          <div>
+            <h3 className="settings-card__title">Orari di apertura</h3>
+            <p className="settings-card__sub">Visibili sul sito nella sezione Contatti</p>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            {saved  && <span className="saved-badge">✓ Salvato</span>}
+            {saving && <span className="saving-badge">Salvataggio…</span>}
+            <button className="btn-save-hours" onClick={saveHours}>Salva orari</button>
+          </div>
+        </div>
+
+        {hours && (
+          <div className="hours-editor">
+            {DAY_KEYS.map((day) => {
+              const d = hours[day as keyof WeekHours];
+              return (
+                <div key={day} className="hours-row-edit">
+                  <label className="hours-day-toggle">
+                    <input type="checkbox" checked={d.open}
+                      onChange={(e) => updateDay(day, "open", e.target.checked)} />
+                    <span className="hours-day-name">{DAY_LABELS[day]}</span>
+                  </label>
+                  {d.open ? (
+                    <div className="hours-times">
+                      <input type="time" value={d.from}
+                        onChange={(e) => updateDay(day, "from", e.target.value)}
+                        className="time-input" />
+                      <span className="hours-sep">–</span>
+                      <input type="time" value={d.to}
+                        onChange={(e) => updateDay(day, "to", e.target.value)}
+                        className="time-input" />
+                    </div>
+                  ) : (
+                    <span className="hours-closed">Chiuso</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── MENU TAB (admin only) ────────────────────────────────
+function MenuTab() {
+  const [menu, setMenu]         = useState<MenuCategory[]>([]);
+  const [saving, setSaving]     = useState(false);
+  const [saved, setSaved]       = useState(false);
   const [editingItem, setEditingItem] = useState<{ catIdx: number; itemIdx: number | null } | null>(null);
+  const [draft, setDraft]       = useState<MenuItem>({ id: newId(), name: "", ingredients: "", price: 0, popular: false, spicy: false, vegetarian: false, active: true });
+  const [showNewCat, setShowNewCat] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [newCatEmoji, setNewCatEmoji] = useState("🍕");
-  const [showNewCat, setShowNewCat] = useState(false);
-  const blankItem = (): MenuItem => ({ id: newId(), name: "", ingredients: "", price: 0, popular: false, spicy: false, vegetarian: false, active: true });
-  const [draft, setDraft] = useState<MenuItem>(blankItem());
 
   useEffect(() => { fetch("/api/menu").then((r) => r.json()).then(setMenu).catch(() => {}); }, []);
 
   const saveCategory = async (cat: MenuCategory) => {
     setSaving(true);
-    await fetch("/api/menu", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify([cat]),
-    });
-    setSaving(false); setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    await fetch("/api/menu", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify([cat]) });
+    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
-  const saveCategoryList = async (updated: MenuCategory[]) => {
-    setSaving(true);
-    await fetch("/api/menu", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(updated),
-    });
-    setSaving(false); setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const toggleActive = (ci: number, ii: number) => {
+    const updated = menu.map((cat, c) => c !== ci ? cat : { ...cat, items: cat.items.map((item, i) => i !== ii ? item : { ...item, active: !item.active }) });
+    setMenu(updated); saveCategory(updated[ci]);
   };
-
-  const toggleActive = (catIdx: number, itemIdx: number) => {
-    const updated = menu.map((cat, ci) => ci !== catIdx ? cat : {
-      ...cat, items: cat.items.map((item, ii) => ii !== itemIdx ? item : { ...item, active: !item.active })
-    });
-    setMenu(updated);
-    saveCategory(updated[catIdx]);
+  const deleteItem = (ci: number, ii: number) => {
+    if (!confirm("Eliminare?")) return;
+    const updated = menu.map((cat, c) => c !== ci ? cat : { ...cat, items: cat.items.filter((_, i) => i !== ii) });
+    setMenu(updated); saveCategory(updated[ci]);
   };
-
-  const deleteItem = (catIdx: number, itemIdx: number) => {
-    if (!confirm("Eliminare questo prodotto?")) return;
-    const updated = menu.map((cat, ci) => ci !== catIdx ? cat : { ...cat, items: cat.items.filter((_, ii) => ii !== itemIdx) });
-    setMenu(updated);
-    saveCategory(updated[catIdx]);
+  const deleteCategory = async (ci: number) => {
+    if (!confirm(`Eliminare "${menu[ci].category}"?`)) return;
+    const cat = menu[ci];
+    if (cat.id) await fetch("/api/menu", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: cat.id }) });
+    setMenu(menu.filter((_, c) => c !== ci));
   };
-
-  const deleteCategory = async (catIdx: number) => {
-    if (!confirm(`Eliminare la categoria "${menu[catIdx].category}"?`)) return;
-    const cat = menu[catIdx];
-    if (cat.id) {
-      await fetch("/api/menu", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: cat.id }) });
-    }
-    setMenu(menu.filter((_, ci) => ci !== catIdx));
+  const openEdit = (ci: number, ii: number | null) => {
+    setEditingItem({ catIdx: ci, itemIdx: ii });
+    setDraft(ii === null ? { id: newId(), name: "", ingredients: "", price: 0, popular: false, spicy: false, vegetarian: false, active: true } : { ...menu[ci].items[ii] });
   };
-
-  const openEdit = (catIdx: number, itemIdx: number | null) => {
-    setEditingItem({ catIdx, itemIdx });
-    setDraft(itemIdx === null ? blankItem() : { ...menu[catIdx].items[itemIdx] });
-  };
-
   const saveItem = () => {
     if (!draft.name.trim() || !editingItem) return;
-    const { catIdx, itemIdx } = editingItem;
-    const updated = menu.map((cat, ci) => {
-      if (ci !== catIdx) return cat;
-      const items = itemIdx === null ? [...cat.items, draft] : cat.items.map((item, ii) => ii === itemIdx ? draft : item);
-      return { ...cat, items };
+    const { catIdx: ci, itemIdx: ii } = editingItem;
+    const updated = menu.map((cat, c) => {
+      if (c !== ci) return cat;
+      return { ...cat, items: ii === null ? [...cat.items, draft] : cat.items.map((item, i) => i === ii ? draft : item) };
     });
-    setMenu(updated);
-    saveCategory(updated[catIdx]);
-    setEditingItem(null);
+    setMenu(updated); saveCategory(updated[ci]); setEditingItem(null);
   };
-
   const addCategory = () => {
     if (!newCatName.trim()) return;
     const newCat: MenuCategory = { category: newCatName.trim(), emoji: newCatEmoji, sort_order: menu.length, items: [] };
     const updated = [...menu, newCat];
     setMenu(updated);
-    saveCategoryList([newCat]);
-    // Refresh to get IDs from Supabase
-    setTimeout(() => fetch("/api/menu").then((r) => r.json()).then(setMenu), 500);
+    fetch("/api/menu", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify([newCat]) })
+      .then(() => fetch("/api/menu").then((r) => r.json()).then(setMenu));
     setNewCatName(""); setNewCatEmoji("🍕"); setShowNewCat(false);
   };
 
   return (
     <div className="tab-content">
       <div className="menu-toolbar">
-        <span className="menu-toolbar__title">{menu.reduce((s, c) => s + c.items.length, 0)} prodotti in {menu.length} categorie</span>
+        <span className="menu-toolbar__title">{menu.reduce((s, c) => s + c.items.length, 0)} prodotti · {menu.length} categorie</span>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           {saved  && <span className="saved-badge">✓ Salvato</span>}
           {saving && <span className="saving-badge">Salvataggio…</span>}
@@ -195,23 +353,23 @@ function MenuTab() {
       </div>
       {showNewCat && (
         <div className="new-cat-form">
-          <input value={newCatEmoji} onChange={(e) => setNewCatEmoji(e.target.value)} placeholder="🍕" className="emoji-input" />
+          <input value={newCatEmoji} onChange={(e) => setNewCatEmoji(e.target.value)} className="emoji-input" />
           <input value={newCatName} onChange={(e) => setNewCatName(e.target.value)} placeholder="Nome categoria" className="cat-name-input" onKeyDown={(e) => e.key === "Enter" && addCategory()} />
           <button className="btn-confirm" onClick={addCategory}>Aggiungi</button>
           <button className="btn-cancel" onClick={() => setShowNewCat(false)}>Annulla</button>
         </div>
       )}
-      {menu.map((cat, catIdx) => (
+      {menu.map((cat, ci) => (
         <div key={cat.id ?? cat.category} className="menu-section">
           <div className="menu-section__head">
             <h3 className="menu-section__title">{cat.emoji} {cat.category}</h3>
             <div style={{display:"flex",gap:6}}>
-              <button className="btn-sm btn-sm--add" onClick={() => openEdit(catIdx, null)}>+ Prodotto</button>
-              <button className="btn-sm btn-sm--del" onClick={() => deleteCategory(catIdx)}>🗑 Categoria</button>
+              <button className="btn-sm btn-sm--add" onClick={() => openEdit(ci, null)}>+ Prodotto</button>
+              <button className="btn-sm btn-sm--del" onClick={() => deleteCategory(ci)}>🗑</button>
             </div>
           </div>
           <div className="menu-items-list">
-            {cat.items.map((item, itemIdx) => (
+            {cat.items.map((item, ii) => (
               <div key={item.id} className={`menu-item-row${!item.active ? " menu-item-row--inactive" : ""}`}>
                 <div className="menu-item-row__main">
                   <span className="menu-item-row__name">{item.name}</span>
@@ -225,13 +383,13 @@ function MenuTab() {
                 </div>
                 <p className="menu-item-row__ing">{item.ingredients}</p>
                 <div className="menu-item-row__actions">
-                  <button className="btn-sm btn-sm--edit" onClick={() => openEdit(catIdx, itemIdx)}>✏️ Modifica</button>
-                  <button className="btn-sm" onClick={() => toggleActive(catIdx, itemIdx)}>{item.active ? "⏸ Disattiva" : "▶ Attiva"}</button>
-                  <button className="btn-sm btn-sm--del" onClick={() => deleteItem(catIdx, itemIdx)}>🗑</button>
+                  <button className="btn-sm btn-sm--edit" onClick={() => openEdit(ci, ii)}>✏️ Modifica</button>
+                  <button className="btn-sm" onClick={() => toggleActive(ci, ii)}>{item.active ? "⏸ Disattiva" : "▶ Attiva"}</button>
+                  <button className="btn-sm btn-sm--del" onClick={() => deleteItem(ci, ii)}>🗑</button>
                 </div>
               </div>
             ))}
-            {cat.items.length === 0 && <p className="empty-cat">Nessun prodotto. Clicca &quot;+ Prodotto&quot; per aggiungerne uno.</p>}
+            {cat.items.length === 0 && <p className="empty-cat">Nessun prodotto.</p>}
           </div>
         </div>
       ))}
@@ -244,18 +402,10 @@ function MenuTab() {
               <button onClick={() => setEditingItem(null)}>✕</button>
             </div>
             <div className="modal__body">
-              <label className="modal-field"><span>Nome *</span>
-                <input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} placeholder="Margherita" />
-              </label>
-              <label className="modal-field"><span>Ingredienti</span>
-                <textarea value={draft.ingredients} onChange={(e) => setDraft({ ...draft, ingredients: e.target.value })} placeholder="Pomodoro, mozzarella…" rows={2} />
-              </label>
-              <label className="modal-field"><span>Descrizione breve (opzionale)</span>
-                <input value={draft.description ?? ""} onChange={(e) => setDraft({ ...draft, description: e.target.value })} placeholder="La nostra pizza firma" />
-              </label>
-              <label className="modal-field"><span>Prezzo (€) *</span>
-                <input type="number" step="0.5" min="0" value={draft.price} onChange={(e) => setDraft({ ...draft, price: parseFloat(e.target.value) || 0 })} />
-              </label>
+              <label className="modal-field"><span>Nome *</span><input value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} /></label>
+              <label className="modal-field"><span>Ingredienti</span><textarea value={draft.ingredients} onChange={(e) => setDraft({ ...draft, ingredients: e.target.value })} rows={2} /></label>
+              <label className="modal-field"><span>Descrizione breve</span><input value={draft.description ?? ""} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /></label>
+              <label className="modal-field"><span>Prezzo (€) *</span><input type="number" step="0.5" min="0" value={draft.price} onChange={(e) => setDraft({ ...draft, price: parseFloat(e.target.value) || 0 })} /></label>
               <div className="modal-flags">
                 {(["popular","spicy","vegetarian","active"] as const).map((flag) => (
                   <label key={flag} className="flag-toggle">
@@ -267,7 +417,7 @@ function MenuTab() {
             </div>
             <div className="modal__foot">
               <button className="btn-cancel-modal" onClick={() => setEditingItem(null)}>Annulla</button>
-              <button className="btn-save-modal" onClick={saveItem} disabled={!draft.name.trim()}>Salva prodotto</button>
+              <button className="btn-save-modal" onClick={saveItem} disabled={!draft.name.trim()}>Salva</button>
             </div>
           </div>
         </>
@@ -278,48 +428,52 @@ function MenuTab() {
 
 // ─── ROOT PAGE ─────────────────────────────────────────────
 export default function ShopPage() {
-  const [authed, setAuthed] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return localStorage.getItem("shop_authed") === "1";
+  const [user, setUser] = useState<StaffUser | null>(() => {
+    if (typeof window === "undefined") return null;
+    try { return JSON.parse(localStorage.getItem("shop_user") ?? "null"); } catch { return null; }
   });
-  const [pwd, setPwd] = useState("");
-  const [tab, setTab] = useState<"orders" | "menu">("orders");
+  const [tab, setTab] = useState<"orders" | "menu" | "settings">("orders");
 
-  const login = () => {
-    if (pwd === SHOP_PASSWORD) { localStorage.setItem("shop_authed", "1"); setAuthed(true); }
-  };
-  const logout = () => { localStorage.removeItem("shop_authed"); setAuthed(false); setPwd(""); };
+  const handleLogin = (u: StaffUser) => { setUser(u); };
+  const logout = () => { localStorage.removeItem("shop_user"); setUser(null); };
 
-  if (!authed) return (
-    <div className="login">
-      <div className="login__card">
-        <h1 className="login__title">🍕 La Piazzetta</h1>
-        <p className="login__sub">Dashboard</p>
-        <input type="password" placeholder="Password" value={pwd}
-          onChange={(e) => setPwd(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && login()}
-          className="login__input" autoFocus />
-        <button className="login__btn" onClick={login}>Accedi</button>
-        {pwd && pwd !== SHOP_PASSWORD && <p className="login__err">Password errata</p>}
-      </div>
+  if (!user) return (
+    <>
+      <LoginScreen onLogin={handleLogin} />
       <style>{styles}</style>
-    </div>
+    </>
   );
+
+  const roleBadge: Record<StaffRole, string> = {
+    reception: "🧑‍💼 Receptionist",
+    delivery:  "🛵 Fattorino",
+    admin:     "👑 Admin",
+  };
 
   return (
     <div className="shop">
       <header className="shop__header">
         <div className="shop__header-inner">
-          <h1 className="shop__logo">🍕 La Piazzetta</h1>
+          <div className="shop__logo-wrap">
+            <span className="shop__logo">🍕 La Piazzetta</span>
+            <span className="role-badge">{roleBadge[user.role]}</span>
+          </div>
           <nav className="shop__tabs">
             <button className={`shop__tab${tab === "orders" ? " shop__tab--active" : ""}`} onClick={() => setTab("orders")}>📋 Ordini</button>
-            <button className={`shop__tab${tab === "menu" ? " shop__tab--active" : ""}`} onClick={() => setTab("menu")}>🍕 Menu</button>
+            {user.role === "admin" && (
+              <>
+                <button className={`shop__tab${tab === "menu" ? " shop__tab--active" : ""}`} onClick={() => setTab("menu")}>🍕 Menu</button>
+                <button className={`shop__tab${tab === "settings" ? " shop__tab--active" : ""}`} onClick={() => setTab("settings")}>⚙️ Impostazioni</button>
+              </>
+            )}
             <button className="shop__tab shop__tab--logout" onClick={logout}>🚪 Esci</button>
           </nav>
         </div>
       </header>
       <main className="shop__main">
-        {tab === "orders" ? <OrdersTab /> : <MenuTab />}
+        {tab === "orders"   && <OrdersTab role={user.role} />}
+        {tab === "menu"     && user.role === "admin" && <MenuTab />}
+        {tab === "settings" && user.role === "admin" && <SettingsTab />}
       </main>
       <style>{styles}</style>
     </div>
@@ -328,27 +482,37 @@ export default function ShopPage() {
 
 const styles = `
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'DM Sans',sans-serif;background:#F5EADA}
+body{font-family:'DM Sans',sans-serif;background:#F5EADA;min-height:100vh}
+
+/* Login */
 .login{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#1C1C1A;padding:24px}
-.login__card{background:#FDF6EC;border-radius:20px;padding:40px 32px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:16px;box-shadow:0 20px 60px rgba(0,0,0,.4)}
-.login__title{font-family:Georgia,serif;font-size:1.8rem;font-weight:700;color:#1C1C1A;text-align:center}
-.login__sub{font-size:.82rem;color:#7A7770;text-align:center;margin-top:-8px}
-.login__input{padding:12px 16px;border:1.5px solid #EDE0CC;border-radius:10px;font-size:.95rem;width:100%;outline:none}
+.login__card{background:#FDF6EC;border-radius:20px;padding:40px 32px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 60px rgba(0,0,0,.4);align-items:center}
+.login__logo{font-size:2.5rem}
+.login__title{font-family:Georgia,serif;font-size:1.6rem;font-weight:700;color:#1C1C1A}
+.login__sub{font-size:.82rem;color:#7A7770;margin-top:-6px}
+.login__input{padding:12px 16px;border:1.5px solid #EDE0CC;border-radius:10px;font-size:.95rem;width:100%;outline:none;font-family:inherit}
 .login__input:focus{border-color:#B03A2E}
-.login__btn{padding:13px;background:#B03A2E;color:#fff;border:none;border-radius:10px;font-size:.95rem;font-weight:500;cursor:pointer;transition:background .15s}
-.login__btn:hover{background:#C9503F}
+.login__btn{padding:13px;background:#B03A2E;color:#fff;border:none;border-radius:10px;font-size:.95rem;font-weight:500;cursor:pointer;width:100%;transition:background .15s}
+.login__btn:hover:not(:disabled){background:#C9503F}
+.login__btn:disabled{opacity:.6;cursor:wait}
 .login__err{font-size:.8rem;color:#B03A2E;text-align:center}
+
+/* Shell */
 .shop__header{background:#1C1C1A;position:sticky;top:0;z-index:10;box-shadow:0 2px 12px rgba(0,0,0,.2)}
-.shop__header-inner{max-width:1100px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:16px;height:56px}
-.shop__logo{font-family:Georgia,serif;font-size:1.1rem;font-weight:700;color:#FDF6EC;flex:1}
-.shop__tabs{display:flex;gap:4px}
-.shop__tab{padding:7px 14px;background:rgba(253,246,236,.08);border:none;color:rgba(253,246,236,.6);border-radius:8px;cursor:pointer;font-size:.83rem;font-weight:500;transition:background .15s,color .15s}
+.shop__header-inner{max-width:1200px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:12px;min-height:56px;flex-wrap:wrap}
+.shop__logo-wrap{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
+.shop__logo{font-family:Georgia,serif;font-size:1.05rem;font-weight:700;color:#FDF6EC;white-space:nowrap}
+.role-badge{font-size:.7rem;font-weight:500;padding:3px 9px;border-radius:999px;background:rgba(253,246,236,.12);color:rgba(253,246,236,.7);white-space:nowrap}
+.shop__tabs{display:flex;gap:4px;flex-wrap:wrap}
+.shop__tab{padding:6px 12px;background:rgba(253,246,236,.08);border:none;color:rgba(253,246,236,.6);border-radius:8px;cursor:pointer;font-size:.8rem;font-weight:500;transition:background .15s,color .15s;white-space:nowrap}
 .shop__tab:hover{background:rgba(253,246,236,.15);color:#FDF6EC}
 .shop__tab--active{background:rgba(253,246,236,.18);color:#FDF6EC}
-.shop__tab--logout{color:rgba(253,100,80,.7)}
-.shop__tab--logout:hover{background:rgba(253,100,80,.12);color:#ff6450}
-.shop__main{max-width:1100px;margin:0 auto;padding:20px}
+.shop__tab--logout{color:rgba(255,100,80,.7)}
+.shop__tab--logout:hover{background:rgba(255,100,80,.12);color:#ff6450}
+.shop__main{max-width:1200px;margin:0 auto;padding:20px}
 .tab-content{display:flex;flex-direction:column;gap:16px}
+
+/* Orders */
 .orders-stats{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .stat-pill{font-size:.75rem;font-weight:500;padding:5px 12px;border-radius:999px}
 .stat-pill--new{background:#FEF3DB;color:#8A5E12}
@@ -377,32 +541,54 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA}
 .order-item__price{color:#7A7770;white-space:nowrap}
 .order-total{display:flex;justify-content:space-between;align-items:center;padding-top:8px;border-top:1px solid #EDE0CC;font-size:.82rem;font-weight:500;color:#7A7770}
 .order-total__amt{font-family:Georgia,serif;font-size:1.15rem;font-weight:700;color:#1C1C1A}
-.order-actions{display:flex;gap:8px}
-.action-btn{flex:1;padding:10px;border:none;border-radius:10px;font-size:.87rem;font-weight:500;cursor:pointer;transition:opacity .15s,transform .15s}
+.order-actions{display:flex;gap:8px;flex-wrap:wrap}
+.action-btn{flex:1;padding:10px;border:none;border-radius:10px;font-size:.85rem;font-weight:500;cursor:pointer;transition:opacity .15s,transform .15s;min-width:120px}
 .action-btn:hover{opacity:.88;transform:translateY(-1px)}
 .action-btn--ready{background:#4CAF50;color:#fff}
 .action-btn--delivered{background:#1C1C1A;color:#FDF6EC}
-.menu-toolbar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#fff;border:1px solid #EDE0CC;border-radius:12px}
-.menu-toolbar__title{font-size:.85rem;color:#7A7770}
+
+/* Settings */
+.settings-card{background:#fff;border:1px solid #EDE0CC;border-radius:14px;overflow:hidden}
+.settings-card__head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;gap:12px;flex-wrap:wrap}
+.settings-card__title{font-family:Georgia,serif;font-size:1rem;font-weight:700;color:#1C1C1A;margin-bottom:3px}
+.settings-card__sub{font-size:.78rem;color:#7A7770}
+.settings-card__warning{padding:12px 20px;background:#FFF3CD;border-top:1px solid #FFE082;font-size:.82rem;color:#7A5200;font-weight:500}
+.toggle-btn{display:flex;align-items:center;gap:8px;padding:10px 16px;border:none;border-radius:999px;cursor:pointer;font-size:.88rem;font-weight:500;transition:background .2s;flex-shrink:0}
+.toggle-btn--on{background:#EBF5EB;color:#1B5E20}
+.toggle-btn--off{background:#FDECEA;color:#B71C1C}
+.toggle-btn__dot{width:10px;height:10px;border-radius:50%;background:currentColor}
+.btn-save-hours{padding:8px 16px;background:#B03A2E;color:#fff;border:none;border-radius:8px;font-size:.82rem;font-weight:500;cursor:pointer}
+.hours-editor{padding:8px 20px 16px;display:flex;flex-direction:column;gap:6px}
+.hours-row-edit{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid #F5EADA}
+.hours-row-edit:last-child{border-bottom:none}
+.hours-day-toggle{display:flex;align-items:center;gap:8px;cursor:pointer;min-width:130px}
+.hours-day-toggle input{width:16px;height:16px;accent-color:#B03A2E;cursor:pointer;flex-shrink:0}
+.hours-day-name{font-size:.88rem;font-weight:500;color:#1C1C1A}
+.hours-times{display:flex;align-items:center;gap:6px}
+.time-input{padding:6px 10px;border:1.5px solid #EDE0CC;border-radius:8px;font-size:.85rem;font-family:inherit;color:#1C1C1A}
+.time-input:focus{outline:none;border-color:#B03A2E}
+.hours-sep{color:#7A7770;font-size:.85rem}
+.hours-closed{font-size:.8rem;font-weight:500;color:#B03A2E;text-transform:uppercase;letter-spacing:.06em}
 .saved-badge{font-size:.78rem;font-weight:500;color:#2E7D32;background:#EBF5EB;padding:4px 10px;border-radius:999px}
 .saving-badge{font-size:.78rem;color:#7A7770}
+
+/* Menu */
+.menu-toolbar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#fff;border:1px solid #EDE0CC;border-radius:12px;flex-wrap:wrap;gap:8px}
+.menu-toolbar__title{font-size:.85rem;color:#7A7770}
 .btn-add-cat{padding:8px 14px;background:#1C1C1A;color:#FDF6EC;border:none;border-radius:8px;font-size:.82rem;font-weight:500;cursor:pointer}
-.btn-add-cat:hover{background:#3A3A36}
 .new-cat-form{display:flex;gap:8px;align-items:center;padding:14px 16px;background:#fff;border:1px solid #EDE0CC;border-radius:12px;flex-wrap:wrap}
 .emoji-input{width:50px;padding:8px;border:1.5px solid #EDE0CC;border-radius:8px;font-size:1.2rem;text-align:center}
 .cat-name-input{flex:1;min-width:160px;padding:9px 12px;border:1.5px solid #EDE0CC;border-radius:8px;font-size:.9rem}
-.cat-name-input:focus,.emoji-input:focus{outline:none;border-color:#B03A2E}
+.cat-name-input:focus,.emoji-input:focus,.time-input:focus{outline:none;border-color:#B03A2E}
 .btn-confirm{padding:9px 16px;background:#B03A2E;color:#fff;border:none;border-radius:8px;font-size:.85rem;font-weight:500;cursor:pointer}
 .btn-cancel{padding:9px 16px;background:transparent;color:#7A7770;border:1px solid #EDE0CC;border-radius:8px;font-size:.85rem;cursor:pointer}
 .menu-section{background:#fff;border:1px solid #EDE0CC;border-radius:12px;overflow:hidden}
-.menu-section__head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#F5EADA;border-bottom:1px solid #EDE0CC}
+.menu-section__head{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#F5EADA;border-bottom:1px solid #EDE0CC;flex-wrap:wrap;gap:8px}
 .menu-section__title{font-family:Georgia,serif;font-size:1rem;font-weight:700;color:#1C1C1A}
 .btn-sm{padding:5px 10px;border:1px solid #EDE0CC;background:#fff;border-radius:6px;font-size:.75rem;cursor:pointer;white-space:nowrap;transition:background .15s}
 .btn-sm:hover{background:#F5EADA}
-.btn-sm--add{border-color:#B03A2E;color:#B03A2E}
-.btn-sm--add:hover{background:#FFF0EE}
-.btn-sm--del{border-color:#ffcdd2;color:#B71C1C}
-.btn-sm--del:hover{background:#ffebee}
+.btn-sm--add{border-color:#B03A2E;color:#B03A2E}.btn-sm--add:hover{background:#FFF0EE}
+.btn-sm--del{border-color:#ffcdd2;color:#B71C1C}.btn-sm--del:hover{background:#ffebee}
 .btn-sm--edit{border-color:#B0BEC5;color:#455A64}
 .menu-items-list{display:flex;flex-direction:column}
 .menu-item-row{padding:12px 16px;border-bottom:1px solid #F5EADA;display:flex;flex-direction:column;gap:4px}
@@ -419,7 +605,7 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA}
 .flag--off{background:#FDECEA;color:#B71C1C;font-size:.65rem;font-weight:600;padding:1px 6px;border-radius:4px}
 .empty-cat{padding:12px 16px;font-size:.82rem;color:#B0ACA5;font-style:italic}
 .modal-backdrop{position:fixed;inset:0;z-index:300;background:rgba(28,28,26,.5);backdrop-filter:blur(2px)}
-.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:301;background:#fff;border-radius:16px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(28,28,26,.25)}
+.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:301;background:#fff;border-radius:16px;width:calc(100% - 40px);max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(28,28,26,.25)}
 .modal__head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #EDE0CC;position:sticky;top:0;background:#fff}
 .modal__head h3{font-family:Georgia,serif;font-size:1.05rem;font-weight:700;color:#1C1C1A}
 .modal__head button{background:none;border:none;font-size:1.1rem;cursor:pointer;color:#7A7770}

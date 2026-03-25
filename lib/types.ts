@@ -37,3 +37,33 @@ export type MenuCategory = {
   sort_order: number;
   items: MenuItem[];
 };
+
+export type StaffRole = "reception" | "delivery" | "admin";
+
+export type StaffUser = {
+  id: number;
+  username: string;
+  role: StaffRole;
+  name: string;
+};
+
+export type DayHours = {
+  open: boolean;
+  from: string;
+  to: string;
+};
+
+export type WeekHours = {
+  monday: DayHours;
+  tuesday: DayHours;
+  wednesday: DayHours;
+  thursday: DayHours;
+  friday: DayHours;
+  saturday: DayHours;
+  sunday: DayHours;
+};
+
+export type Settings = {
+  online_orders: boolean;
+  hours: WeekHours;
+};
