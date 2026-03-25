@@ -7,7 +7,7 @@ export type OrderItem = {
 
 export type Order = {
   id: string;
-  clientName: string;
+  client_name: string;
   phone: string;
   address: string;
   lat?: number;
@@ -15,5 +15,25 @@ export type Order = {
   items: OrderItem[];
   total: number;
   status: "new" | "ready";
-  placedAt: string;
+  placed_at: string;
+};
+
+export type MenuItem = {
+  id: string;
+  name: string;
+  ingredients: string;
+  price: number;
+  popular: boolean;
+  spicy: boolean;
+  vegetarian: boolean;
+  description?: string;
+  active: boolean;
+};
+
+export type MenuCategory = {
+  id?: number;
+  category: string;
+  emoji: string;
+  sort_order: number;
+  items: MenuItem[];
 };

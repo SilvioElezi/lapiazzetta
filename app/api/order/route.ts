@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { orders } from "../../../lib/store";
+import { supabaseAdmin } from "../../../lib/supabase";
 import type { Order } from "../../../lib/types";
 
 function generateId(): string {
@@ -11,7 +11,7 @@ async function sendTelegramLog(order: Order) {
   const chatId = process.env.TELEGRAM_LOG_CHAT_ID;
   if (!token || !chatId) return;
   const lines = order.items.map((i) => `  • ${i.name} x${i.qty} — €${(i.price * i.qty).toFixed(2)}`);
-  const text = [`🍕 *Nuovo ordine #${order.id}*`, `👤 ${order.clientName} — 📞 ${order.phone}`, `📍 ${order.address}`, ``, lines.join("\n"), ``, `💰 *Totale: €${order.total.toFixed(2)}*`].join("\n");
+  const text = [`🍕 *Nuovo ordine #${order.id}*`, `👤 ${order.client_name} — 📞 ${order.phone}`, `📍 ${order.address}`, ``, lines.join("\n"), ``, `💰 *Totale: €${order.total.toFixed(2)}*`].join("\n");
   await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chat_id: chatId, text, parse_mode: "Markdown" }),
@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const order: Order = {
     id: generateId(),
-    clientName: body.clientName,
+    client_name: body.clientName,
     phone: body.phone,
     address: body.address,
     lat: body.lat,
@@ -30,9 +30,13 @@ export async function POST(req: NextRequest) {
     items: body.items,
     total: body.total,
     status: "new",
-    placedAt: new Date().toISOString(),
+    placed_at: new Date().toISOString(),
   };
-  await orders.set(order.id, order);
+  const { error } = await supabaseAdmin.from("orders").insert(order);
+  if (error) {
+    console.error("Supabase insert error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
   await sendTelegramLog(order);
   return NextResponse.json({ ok: true, id: order.id });
 }

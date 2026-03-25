@@ -1,9 +1,11 @@
 import { NextResponse } from "next/server";
-import { orders } from "../../../lib/store";
+import { supabaseAdmin } from "../../../lib/supabase";
 
 export async function GET() {
-  const all = (await orders.values()).sort(
-    (a, b) => new Date(a.placedAt).getTime() - new Date(b.placedAt).getTime()
-  );
-  return NextResponse.json(all);
+  const { data, error } = await supabaseAdmin
+    .from("orders")
+    .select("*")
+    .order("placed_at", { ascending: true });
+  if (error) return NextResponse.json([], { status: 500 });
+  return NextResponse.json(data);
 }

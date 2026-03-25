@@ -1,10 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
-
-type OrderItem = { id: string; name: string; qty: number; price: number };
-type Order = { id: string; clientName: string; phone: string; address: string; lat?: number; lng?: number; items: OrderItem[]; total: number; status: "new" | "ready"; placedAt: string };
-type MenuItem = { id: string; name: string; ingredients: string; price: number; popular: boolean; spicy: boolean; vegetarian: boolean; description?: string; active: boolean };
-type MenuCategory = { category: string; emoji: string; items: MenuItem[] };
+import { supabase } from "../../lib/supabase";
+import type { Order, MenuCategory, MenuItem } from "../../lib/types";
 
 const SHOP_PASSWORD = process.env.NEXT_PUBLIC_SHOP_PASSWORD ?? "piazzetta2024";
 
@@ -19,24 +16,40 @@ function newId() { return Date.now().toString(36) + Math.random().toString(36).s
 // ─── ORDERS TAB ───────────────────────────────────────────
 function OrdersTab() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [, setTick] = useState(0);
+
   const fetchOrders = useCallback(async () => {
-    try { const r = await fetch("/api/orders"); setOrders(await r.json()); } catch {}
+    const res = await fetch("/api/orders");
+    const data = await res.json();
+    setOrders(data);
   }, []);
+
   useEffect(() => {
     fetchOrders();
-    const poll = setInterval(fetchOrders, 3000);
-    return () => clearInterval(poll);
+    // Real-time subscription — no more polling!
+    const channel = supabase
+      .channel("orders-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, () => {
+        fetchOrders();
+      })
+      .subscribe();
+    // Tick every 30s to refresh elapsed times
+    const tick = setInterval(() => setTick((t) => t + 1), 30000);
+    return () => { supabase.removeChannel(channel); clearInterval(tick); };
   }, [fetchOrders]);
-  const markReady     = async (id: string) => { await fetch(`/api/order/${id}`, { method: "PATCH" });  fetchOrders(); };
-  const markDelivered = async (id: string) => { await fetch(`/api/order/${id}`, { method: "DELETE" }); fetchOrders(); };
+
+  const markReady     = async (id: string) => { await fetch(`/api/order/${id}`, { method: "PATCH" }); };
+  const markDelivered = async (id: string) => { await fetch(`/api/order/${id}`, { method: "DELETE" }); };
+
   const newOrders   = orders.filter((o) => o.status === "new");
   const readyOrders = orders.filter((o) => o.status === "ready");
+
   return (
     <div className="tab-content">
       <div className="orders-stats">
         <span className="stat-pill stat-pill--new">🆕 {newOrders.length} nuovi</span>
         <span className="stat-pill stat-pill--ready">✅ {readyOrders.length} pronti</span>
-        <span className="shop__live">● Live</span>
+        <span className="shop__live">● Real-time</span>
       </div>
       {orders.length === 0 ? (
         <div className="empty-state"><span>🍃</span><p>Nessun ordine attivo</p><small>Gli ordini appariranno automaticamente</small></div>
@@ -51,10 +64,10 @@ function OrdersTab() {
                     {order.status === "new" ? "Nuovo" : "Pronto 🛵"}
                   </span>
                 </div>
-                <span className="order-time">{elapsed(order.placedAt)}</span>
+                <span className="order-time">{elapsed(order.placed_at)}</span>
               </div>
               <div className="order-client">
-                <p className="order-client__name">{order.clientName}</p>
+                <p className="order-client__name">{order.client_name}</p>
                 <a href={`tel:${order.phone}`} className="order-client__link">📞 {order.phone}</a>
                 <a href={order.lat ? `https://maps.google.com/?q=${order.lat},${order.lng}` : `https://maps.google.com/?q=${encodeURIComponent(order.address)}`} target="_blank" rel="noopener noreferrer" className="order-client__link">📍 {order.address}</a>
               </div>
@@ -94,30 +107,57 @@ function MenuTab() {
 
   useEffect(() => { fetch("/api/menu").then((r) => r.json()).then(setMenu).catch(() => {}); }, []);
 
-  const saveMenu = async (updated: MenuCategory[]) => {
+  const saveCategory = async (cat: MenuCategory) => {
     setSaving(true);
-    await fetch("/api/menu", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(updated) });
+    await fetch("/api/menu", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify([cat]),
+    });
     setSaving(false); setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
-  const toggleActive = (catIdx: number, itemIdx: number) => {
-    const updated = menu.map((cat, ci) => ci !== catIdx ? cat : { ...cat, items: cat.items.map((item, ii) => ii !== itemIdx ? item : { ...item, active: !item.active }) });
-    setMenu(updated); saveMenu(updated);
+
+  const saveCategoryList = async (updated: MenuCategory[]) => {
+    setSaving(true);
+    await fetch("/api/menu", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(updated),
+    });
+    setSaving(false); setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
   };
+
+  const toggleActive = (catIdx: number, itemIdx: number) => {
+    const updated = menu.map((cat, ci) => ci !== catIdx ? cat : {
+      ...cat, items: cat.items.map((item, ii) => ii !== itemIdx ? item : { ...item, active: !item.active })
+    });
+    setMenu(updated);
+    saveCategory(updated[catIdx]);
+  };
+
   const deleteItem = (catIdx: number, itemIdx: number) => {
     if (!confirm("Eliminare questo prodotto?")) return;
     const updated = menu.map((cat, ci) => ci !== catIdx ? cat : { ...cat, items: cat.items.filter((_, ii) => ii !== itemIdx) });
-    setMenu(updated); saveMenu(updated);
+    setMenu(updated);
+    saveCategory(updated[catIdx]);
   };
-  const deleteCategory = (catIdx: number) => {
+
+  const deleteCategory = async (catIdx: number) => {
     if (!confirm(`Eliminare la categoria "${menu[catIdx].category}"?`)) return;
-    const updated = menu.filter((_, ci) => ci !== catIdx);
-    setMenu(updated); saveMenu(updated);
+    const cat = menu[catIdx];
+    if (cat.id) {
+      await fetch("/api/menu", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: cat.id }) });
+    }
+    setMenu(menu.filter((_, ci) => ci !== catIdx));
   };
+
   const openEdit = (catIdx: number, itemIdx: number | null) => {
     setEditingItem({ catIdx, itemIdx });
     setDraft(itemIdx === null ? blankItem() : { ...menu[catIdx].items[itemIdx] });
   };
+
   const saveItem = () => {
     if (!draft.name.trim() || !editingItem) return;
     const { catIdx, itemIdx } = editingItem;
@@ -126,12 +166,19 @@ function MenuTab() {
       const items = itemIdx === null ? [...cat.items, draft] : cat.items.map((item, ii) => ii === itemIdx ? draft : item);
       return { ...cat, items };
     });
-    setMenu(updated); saveMenu(updated); setEditingItem(null);
+    setMenu(updated);
+    saveCategory(updated[catIdx]);
+    setEditingItem(null);
   };
+
   const addCategory = () => {
     if (!newCatName.trim()) return;
-    const updated = [...menu, { category: newCatName.trim(), emoji: newCatEmoji, items: [] }];
-    setMenu(updated); saveMenu(updated);
+    const newCat: MenuCategory = { category: newCatName.trim(), emoji: newCatEmoji, sort_order: menu.length, items: [] };
+    const updated = [...menu, newCat];
+    setMenu(updated);
+    saveCategoryList([newCat]);
+    // Refresh to get IDs from Supabase
+    setTimeout(() => fetch("/api/menu").then((r) => r.json()).then(setMenu), 500);
     setNewCatName(""); setNewCatEmoji("🍕"); setShowNewCat(false);
   };
 
@@ -140,8 +187,8 @@ function MenuTab() {
       <div className="menu-toolbar">
         <span className="menu-toolbar__title">{menu.reduce((s, c) => s + c.items.length, 0)} prodotti in {menu.length} categorie</span>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          {saved   && <span className="saved-badge">✓ Salvato</span>}
-          {saving  && <span className="saving-badge">Salvataggio…</span>}
+          {saved  && <span className="saved-badge">✓ Salvato</span>}
+          {saving && <span className="saving-badge">Salvataggio…</span>}
           <button className="btn-add-cat" onClick={() => setShowNewCat(!showNewCat)}>+ Categoria</button>
         </div>
       </div>
@@ -154,7 +201,7 @@ function MenuTab() {
         </div>
       )}
       {menu.map((cat, catIdx) => (
-        <div key={cat.category} className="menu-section">
+        <div key={cat.id ?? cat.category} className="menu-section">
           <div className="menu-section__head">
             <h3 className="menu-section__title">{cat.emoji} {cat.category}</h3>
             <div style={{display:"flex",gap:6}}>
@@ -230,7 +277,6 @@ function MenuTab() {
 
 // ─── ROOT PAGE ─────────────────────────────────────────────
 export default function ShopPage() {
-  // ✅ FIX: persist auth in localStorage so closing the tab doesn't log out
   const [authed, setAuthed] = useState(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem("shop_authed") === "1";
@@ -239,29 +285,19 @@ export default function ShopPage() {
   const [tab, setTab] = useState<"orders" | "menu">("orders");
 
   const login = () => {
-    if (pwd === SHOP_PASSWORD) {
-      localStorage.setItem("shop_authed", "1");
-      setAuthed(true);
-    }
+    if (pwd === SHOP_PASSWORD) { localStorage.setItem("shop_authed", "1"); setAuthed(true); }
   };
-
-  const logout = () => {
-    localStorage.removeItem("shop_authed");
-    setAuthed(false);
-    setPwd("");
-  };
+  const logout = () => { localStorage.removeItem("shop_authed"); setAuthed(false); setPwd(""); };
 
   if (!authed) return (
     <div className="login">
       <div className="login__card">
         <h1 className="login__title">🍕 La Piazzetta</h1>
         <p className="login__sub">Dashboard</p>
-        <input
-          type="password" placeholder="Password" value={pwd}
+        <input type="password" placeholder="Password" value={pwd}
           onChange={(e) => setPwd(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && login()}
-          className="login__input" autoFocus
-        />
+          className="login__input" autoFocus />
         <button className="login__btn" onClick={login}>Accedi</button>
         {pwd && pwd !== SHOP_PASSWORD && <p className="login__err">Password errata</p>}
       </div>

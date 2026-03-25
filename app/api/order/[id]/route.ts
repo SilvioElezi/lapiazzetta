@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { orders } from "../../../../lib/store";
+import { supabaseAdmin } from "../../../../lib/supabase";
 
 async function sendTelegramDelivered(id: string, clientName: string, phone: string, placedAt: string) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -18,10 +18,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const order = await orders.get(id);
-  if (!order) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  order.status = "ready";
-  await orders.set(id, order);
+  const { error } = await supabaseAdmin.from("orders").update({ status: "ready" }).eq("id", id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
 
@@ -30,9 +28,9 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const order = await orders.get(id);
-  if (!order) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  await sendTelegramDelivered(order.id, order.clientName, order.phone, order.placedAt);
-  await orders.delete(id);
+  const { data: order } = await supabaseAdmin.from("orders").select("*").eq("id", id).single();
+  if (order) await sendTelegramDelivered(order.id, order.client_name, order.phone, order.placed_at);
+  const { error } = await supabaseAdmin.from("orders").delete().eq("id", id);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
