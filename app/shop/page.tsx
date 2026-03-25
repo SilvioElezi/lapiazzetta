@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
-import { supabase } from "../../lib/supabase";
+import { getSupabase } from "@/lib/supabase";
 import type { Order, MenuCategory, MenuItem } from "../../lib/types";
 
 const SHOP_PASSWORD = process.env.NEXT_PUBLIC_SHOP_PASSWORD ?? "piazzetta2024";
@@ -16,6 +16,7 @@ function newId() { return Date.now().toString(36) + Math.random().toString(36).s
 // ─── ORDERS TAB ───────────────────────────────────────────
 function OrdersTab() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const supabase = getSupabase();
   const [, setTick] = useState(0);
 
   const fetchOrders = useCallback(async () => {
