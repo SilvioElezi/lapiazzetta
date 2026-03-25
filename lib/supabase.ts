@@ -1,11 +1,25 @@
 import { createClient } from "@supabase/supabase-js";
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
-const service = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+// Lazy client (safe for build)
+export function getSupabase() {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    throw new Error("Missing Supabase public env vars");
+  }
 
-// Browser client — uses anon key, safe to expose
-export const supabase = createClient(url, anon);
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
+}
 
-// Server client — uses service_role key, only used in API routes
-export const supabaseAdmin = createClient(url, service);
+// Admin client (ONLY for server-side)
+export function getSupabaseAdmin() {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    throw new Error("Missing Supabase admin env vars");
+  }
+
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+}
