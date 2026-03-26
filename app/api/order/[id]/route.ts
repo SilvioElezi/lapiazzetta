@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
 
 async function sendTelegramDelivered(
   id: string,
@@ -32,7 +32,7 @@ export async function PATCH(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = getSupabaseAdmin(); // ✅ lazy init
+  const supabase = supabaseAdmin; // ✅ lazy init
   const { id } = await params;
 
   const { error } = await supabase
@@ -51,7 +51,7 @@ export async function DELETE(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const supabase = getSupabaseAdmin(); // ✅ lazy init
+  const supabase = supabaseAdmin; // ✅ lazy init
   const { id } = await params;
 
   const { data: order } = await supabase

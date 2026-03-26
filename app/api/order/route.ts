@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
 import type { Order } from "@/lib/types";
 
 function generateId(): string {
@@ -53,7 +53,7 @@ async function sendTelegramLog(order: Order) {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = getSupabaseAdmin();
+  const supabase = supabaseAdmin;
 
   const body = await req.json();
 

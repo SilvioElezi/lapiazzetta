@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export async function GET() {
-  const supabase = getSupabaseAdmin();
+  const supabase = supabaseAdmin;
 
   const { data, error } = await supabase
     .from("menu")
@@ -14,7 +14,7 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = getSupabaseAdmin();
+  const supabase = supabaseAdmin;
   const categories = await req.json();
 
   for (const cat of categories) {
@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
-  const supabase = getSupabaseAdmin();
+  const supabase = supabaseAdmin;
   const { id } = await req.json();
 
   const { error } = await supabase

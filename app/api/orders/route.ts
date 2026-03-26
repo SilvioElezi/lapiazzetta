@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
 
 export async function GET() {
-  const supabase = getSupabaseAdmin(); // ✅ lazy init
+  const supabase = supabaseAdmin; // ✅ lazy init
 
   const { data, error } = await supabase
     .from("orders")
