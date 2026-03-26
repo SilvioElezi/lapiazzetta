@@ -126,7 +126,7 @@ export default function CheckoutDrawer() {
 
       {open && <div className="overlay" onClick={resetAndClose} />}
 
-      <aside className={`drawer ${open ? "open" : ""}`}>
+      <aside className={`drawer${open ? " drawer--open" : ""}`}>
         {step === "cart" && (
           <>
             <h2>Il tuo ordine</h2>
