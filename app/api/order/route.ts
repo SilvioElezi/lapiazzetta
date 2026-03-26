@@ -1,91 +1,58 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
-import type { Order } from "@/lib/types";
+import { supabaseAdmin } from "../../../lib/supabase-admin";
+import type { Order } from "../../../lib/types";
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6).toUpperCase();
 }
 
-// ✅ CREATE WHATSAPP LINK
-function buildWhatsAppLink(order: Order) {
-  const phone = "393520190999"; // 🔴 PUT YOUR BUSINESS NUMBER HERE (no +, no spaces)
-
-  const lines = order.items.map(
-    (i) => `• ${i.name} x${i.qty}`
-  ).join("%0A");
-
-  const message = encodeURIComponent(
-    `Ciao, confermo il mio ordine #%ID%\n\n${lines}\n\nTotale: €${order.total.toFixed(2)}`
-      .replace("%ID%", order.id)
-  );
-
-  return `https://wa.me/${phone}?text=${message}`;
-}
-
-async function sendTelegramLog(order: Order) {
-  const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_LOG_CHAT_ID;
-  if (!token || !chatId) return;
-
-  const lines = order.items.map(
-    (i) => `  • ${i.name} x${i.qty} — €${(i.price * i.qty).toFixed(2)}`
-  );
-
-  const text = [
-    `🍕 *Nuovo ordine #${order.id}*`,
-    `👤 ${order.client_name} — 📞 ${order.phone}`,
-    `📍 ${order.address}`,
-    ``,
-    lines.join("\n"),
-    ``,
-    `💰 *Totale: €${order.total.toFixed(2)}*`,
-  ].join("\n");
-
-  await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: chatId,
-      text,
-      parse_mode: "Markdown",
-    }),
-  }).catch(() => {});
+function generateToken(): string {
+  return Math.random().toString(36).slice(2, 10).toUpperCase();
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = supabaseAdmin;
-
   const body = await req.json();
 
-  const order: Order = {
-    id: generateId(),
+  const id    = generateId();
+  const token = generateToken();
+
+  const order = {
+    id,
     client_name: body.clientName,
-    phone: body.phone,
-    address: body.address,
-    lat: body.lat,
-    lng: body.lng,
-    items: body.items,
-    total: body.total,
-    status: "new",
-    placed_at: new Date().toISOString(),
+    phone:       body.phone,
+    address:     body.address,
+    lat:         body.lat ?? null,
+    lng:         body.lng ?? null,
+    items:       body.items,
+    total:       body.total,
+    status:      "pending",          // ← starts as pending
+    confirm_code: token,             // ← stored for verification
+    placed_at:   new Date().toISOString(),
   };
 
-  const { error } = await supabase.from("orders").insert(order);
+  const { error } = await supabaseAdmin.from("orders").insert(order);
 
   if (error) {
-    console.error("Supabase insert error:", error);
+    console.error("Insert error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  await sendTelegramLog(order);
+  // Build the confirmation URL
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://lapiaggetta.8bit.al";
+  const confirmUrl = `${baseUrl}/api/confirm?id=${id}&token=${token}`;
 
-  // ✅ GENERATE WHATSAPP LINK
-  const whatsappLink = buildWhatsAppLink(order);
+  // Build WhatsApp message (sent to restaurant number as log)
+  const waPhone   = process.env.NEXT_PUBLIC_WA_PHONE ?? "393308860293";
+  const waMessage = encodeURIComponent(
+    `🍕 Confermo il mio ordine #${id}\n👤 ${body.clientName}\n📍 ${body.address}\n\nLink conferma: ${confirmUrl}`
+  );
+  const waUrl = `https://wa.me/${waPhone}?text=${waMessage}`;
 
-  // ✅ RETURN IT
   return NextResponse.json({
-    ok: true,
-    id: order.id,
-    whatsappLink
+    ok:         true,
+    id,
+    token,
+    confirmUrl,
+    waUrl,
   });
 }

@@ -1,201 +1,273 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useCart } from "./CartContext";
 
-type Step = "cart" | "form" | "done";
+type Step = "cart" | "form" | "confirm" | "done";
 
 export default function CheckoutDrawer() {
   const { cart, increase, decrease, remove, total } = useCart();
-
-  const [open, setOpen] = useState(false);
-  const [step, setStep] = useState<Step>("cart");
-
+  const [open,    setOpen]    = useState(false);
+  const [step,    setStep]    = useState<Step>("cart");
   const [locating, setLocating] = useState(false);
-  const [clientName, setClientName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [address, setAddress] = useState("");
-  const [lat, setLat] = useState<number | null>(null);
-  const [lng, setLng] = useState<number | null>(null);
+  const [onlineOrders, setOnlineOrders] = useState(true);
 
-  const [placing, setPlacing] = useState(false);
-  const [orderId, setOrderId] = useState("");
+  // Form fields
+  const [clientName, setClientName] = useState("");
+  const [phone,      setPhone]      = useState("");
+  const [address,    setAddress]    = useState("");
+  const [lat,        setLat]        = useState<number | null>(null);
+  const [lng,        setLng]        = useState<number | null>(null);
+
+  // Order result
+  const [placing,    setPlacing]    = useState(false);
+  const [orderId,    setOrderId]    = useState("");
+  const [waUrl,      setWaUrl]      = useState("");
+  const [confirmUrl, setConfirmUrl] = useState("");
+  const [confirmed,  setConfirmed]  = useState(false);
+  const [polling,    setPolling]    = useState(false);
 
   const itemCount = cart.reduce((s: number, i: any) => s + i.qty, 0);
+
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((d) => setOnlineOrders(d.online_orders ?? true))
+      .catch(() => {});
+  }, []);
+
+  // Poll to check if order was confirmed
+  useEffect(() => {
+    if (!polling || !orderId) return;
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/order-status?id=${orderId}`);
+        const data = await res.json();
+        if (data.status === "new") {
+          setConfirmed(true);
+          setPolling(false);
+          setStep("done");
+        }
+      } catch {}
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [polling, orderId]);
 
   const getGPS = () => {
     if (!navigator.geolocation) return;
     setLocating(true);
-
     navigator.geolocation.getCurrentPosition(
       async (pos) => {
         const { latitude, longitude } = pos.coords;
-        setLat(latitude);
-        setLng(longitude);
-
+        setLat(latitude); setLng(longitude);
         try {
-          const res = await fetch(
-            `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`
-          );
-          const data = await res.json();
-          setAddress(
-            data.display_name ??
-              `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
-          );
-        } catch {
-          setAddress(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
-        }
-
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`);
+          const d = await res.json();
+          setAddress(d.display_name ?? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
+        } catch { setAddress(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`); }
         setLocating(false);
       },
       () => setLocating(false)
     );
   };
 
-  // ✅ UPDATED ORDER FUNCTION WITH WHATSAPP
   const placeOrder = async () => {
     if (!clientName.trim() || !phone.trim() || !address.trim()) return;
-
     setPlacing(true);
-
     try {
       const res = await fetch("/api/order", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clientName: clientName.trim(),
-          phone: phone.trim(),
-          address: address.trim(),
-          lat,
-          lng,
-          items: cart.map((i: any) => ({
-            id: i.id,
-            name: i.name,
-            qty: i.qty,
-            price: i.price
-          })),
-          total
-        })
+          phone:      phone.trim(),
+          address:    address.trim(),
+          lat, lng,
+          items: cart.map((i: any) => ({ id: i.id, name: i.name, qty: i.qty, price: i.price })),
+          total,
+        }),
       });
-
       const data = await res.json();
-
-      if (!res.ok) throw new Error("Order failed");
-
-      // ✅ show success UI first
+      if (!res.ok) throw new Error(data.error);
       setOrderId(data.id);
-      setStep("done");
-
-      // ✅ open WhatsApp after short delay (better UX)
-      setTimeout(() => {
-        if (data.whatsappLink) {
-          window.open(data.whatsappLink, "_blank");
-        }
-      }, 500);
-
-    } catch {
-      alert("Errore. Riprova.");
-    } finally {
-      setPlacing(false);
-    }
+      setWaUrl(data.waUrl);
+      setConfirmUrl(data.confirmUrl);
+      setStep("confirm");
+      setPolling(true);
+    } catch { alert("Errore nell'invio. Riprova."); }
+    finally { setPlacing(false); }
   };
 
   const resetAndClose = () => {
-    setOpen(false);
-    setStep("cart");
-    setClientName("");
-    setPhone("");
-    setAddress("");
-    setLat(null);
-    setLng(null);
-    setOrderId("");
+    setOpen(false); setStep("cart");
+    setClientName(""); setPhone(""); setAddress("");
+    setLat(null); setLng(null);
+    setOrderId(""); setWaUrl(""); setConfirmUrl("");
+    setConfirmed(false); setPolling(false);
   };
 
   return (
     <>
-      <button
-        className="fab"
-        onClick={() => {
-          setOpen(true);
-          setStep("cart");
-        }}
-      >
-        🛒 {itemCount}
+      {/* FAB */}
+      <button className="fab" onClick={() => { setOpen(true); setStep("cart"); }} aria-label="Apri carrello">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/>
+          <path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6"/>
+        </svg>
+        {itemCount > 0 && <span className="fab__badge">{itemCount}</span>}
       </button>
 
-      {open && <div className="overlay" onClick={resetAndClose} />}
+      {open && <div className="overlay" onClick={step === "confirm" ? undefined : resetAndClose} />}
 
       <aside className={`drawer${open ? " drawer--open" : ""}`}>
-        {step === "cart" && (
-          <>
-            <h2>Il tuo ordine</h2>
 
-            {cart.length === 0 ? (
-              <p>Carrello vuoto</p>
-            ) : (
-              <>
-                {cart.map((item: any) => (
-                  <div key={item.id}>
-                    {item.name} x{item.qty} (€{item.price})
-                    <button onClick={() => decrease(item.name)}>-</button>
-                    <button onClick={() => increase(item.name)}>+</button>
-                    <button onClick={() => remove(item.name)}>x</button>
-                  </div>
+        {/* ── CART ── */}
+        {step === "cart" && <>
+          <div className="drawer__head">
+            <h2 className="drawer__title">Il tuo ordine</h2>
+            <button className="drawer__close" onClick={resetAndClose}>✕</button>
+          </div>
+          <div className="drawer__body">
+            {cart.length === 0
+              ? <div className="empty"><span>🛒</span><p>Carrello vuoto</p><small>Aggiungi qualcosa dal menu!</small></div>
+              : <ul className="items">{cart.map((item: any) => (
+                  <li key={item.id} className="item">
+                    <div className="item__row">
+                      <span className="item__name">{item.name}</span>
+                      <span className="item__price">€{(item.price * item.qty).toFixed(2)}</span>
+                    </div>
+                    <div className="item__controls">
+                      <button onClick={() => decrease(item.name)}>−</button>
+                      <span>{item.qty}</span>
+                      <button onClick={() => increase(item.name)}>+</button>
+                      <button className="item__del" onClick={() => remove(item.name)}>🗑</button>
+                    </div>
+                  </li>
+                ))}</ul>
+            }
+          </div>
+          {cart.length > 0 && (
+            <div className="drawer__foot">
+              <div className="total-row"><span>Totale</span><span className="total-amt">€{total.toFixed(2)}</span></div>
+              <button className="btn-primary" onClick={() => setStep("form")}>Procedi all&apos;ordine →</button>
+            </div>
+          )}
+        </>}
+
+        {/* ── FORM ── */}
+        {step === "form" && <>
+          <div className="drawer__head">
+            <button className="drawer__back" onClick={() => setStep("cart")}>← Indietro</button>
+            <h2 className="drawer__title">I tuoi dati</h2>
+            <button className="drawer__close" onClick={resetAndClose}>✕</button>
+          </div>
+          <div className="drawer__body">
+            <div className="form">
+              <label className="field"><span>Nome e cognome *</span>
+                <input type="text" placeholder="Mario Rossi" value={clientName}
+                  onChange={(e) => setClientName(e.target.value)} autoComplete="name" />
+              </label>
+              <label className="field"><span>Telefono *</span>
+                <input type="tel" placeholder="+39 333 123 4567" value={phone}
+                  onChange={(e) => setPhone(e.target.value)} autoComplete="tel" />
+              </label>
+              <div className="field"><span>Indirizzo di consegna *</span>
+                <div className="addr-row">
+                  <input type="text" placeholder="Via Roma 12, Città" value={address}
+                    onChange={(e) => { setAddress(e.target.value); setLat(null); setLng(null); }} />
+                  <button type="button" className="gps-btn" onClick={getGPS} disabled={locating}>
+                    {locating ? "⏳" : "📍"}
+                  </button>
+                </div>
+                {lat && <p className="gps-confirm">📍 Posizione GPS rilevata</p>}
+              </div>
+              <div className="wa-notice">
+                <span className="wa-notice__icon">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                </span>
+                <span>Dovrai confermare l&apos;ordine tramite <strong>WhatsApp</strong>. Assicurati di avere WhatsApp installato.</span>
+              </div>
+              <div className="recap">
+                <p className="recap__label">Riepilogo</p>
+                {cart.map((i: any) => (
+                  <div key={i.id} className="recap__row"><span>{i.name} x{i.qty}</span><span>€{(i.price * i.qty).toFixed(2)}</span></div>
                 ))}
-
-                <p>Totale: €{total.toFixed(2)}</p>
-
-                <button onClick={() => setStep("form")}>
-                  Procedi all'ordine
+                <div className="recap__total"><span>Totale</span><span>€{total.toFixed(2)}</span></div>
+              </div>
+            </div>
+          </div>
+          <div className="drawer__foot">
+            {!onlineOrders
+              ? <div className="orders-closed">🔴 Ordini online sospesi. Chiamaci al +39 030 886 0293</div>
+              : <button className="btn-primary" onClick={placeOrder}
+                  disabled={placing || !clientName || !phone || !address}>
+                  {placing ? "Invio in corso…" : "Continua →"}
                 </button>
-              </>
-            )}
-          </>
-        )}
+            }
+          </div>
+        </>}
 
-        {step === "form" && (
-          <>
-            <h2>I tuoi dati</h2>
+        {/* ── CONFIRM ── */}
+        {step === "confirm" && <>
+          <div className="drawer__head">
+            <h2 className="drawer__title">Conferma ordine</h2>
+          </div>
+          <div className="drawer__body">
+            <div className="confirm-screen">
+              <div className="confirm-screen__icon">📱</div>
+              <h3 className="confirm-screen__title">Un ultimo passo!</h3>
+              <p className="confirm-screen__text">
+                Il tuo ordine <strong>#{orderId}</strong> è pronto ma deve essere confermato.
+                Clicca il bottone qui sotto per aprire WhatsApp e inviare la conferma.
+              </p>
+              <div className="confirm-screen__steps">
+                <div className="confirm-step">
+                  <span className="confirm-step__num">1</span>
+                  <span>Clicca &quot;Conferma su WhatsApp&quot;</span>
+                </div>
+                <div className="confirm-step">
+                  <span className="confirm-step__num">2</span>
+                  <span>WhatsApp si apre con il messaggio pronto</span>
+                </div>
+                <div className="confirm-step">
+                  <span className="confirm-step__num">3</span>
+                  <span>Premi Invia — il tuo ordine è confermato!</span>
+                </div>
+              </div>
 
-            <input
-              placeholder="Nome"
-              value={clientName}
-              onChange={(e) => setClientName(e.target.value)}
-            />
+              <a
+                href={waUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="wa-confirm-btn"
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                Conferma su WhatsApp
+              </a>
 
-            <input
-              placeholder="Telefono"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-            />
+              {polling && !confirmed && (
+                <div className="confirm-waiting">
+                  <span className="confirm-waiting__dot" />
+                  In attesa di conferma…
+                </div>
+              )}
 
-            <input
-              placeholder="Indirizzo"
-              value={address}
-              onChange={(e) => setAddress(e.target.value)}
-            />
+              <p className="confirm-expire">
+                ⏱ L&apos;ordine scade in 15 minuti se non confermato.
+              </p>
+            </div>
+          </div>
+        </>}
 
-            <button onClick={getGPS}>
-              {locating ? "..." : "Usa GPS"}
-            </button>
-
-            <button
-              onClick={placeOrder}
-              disabled={placing}
-            >
-              {placing ? "Invio..." : "🍕 Conferma ordine"}
-            </button>
-          </>
-        )}
-
+        {/* ── DONE ── */}
         {step === "done" && (
-          <>
-            <h2>Ordine ricevuto!</h2>
-            <p>#{orderId}</p>
-            <p>Controlla WhatsApp per confermare</p>
-            <button onClick={resetAndClose}>Chiudi</button>
-          </>
+          <div className="done">
+            <div className="done__icon">✅</div>
+            <h2 className="done__title">Ordine confermato!</h2>
+            <p className="done__id">#{orderId}</p>
+            <p className="done__msg">Ciao <strong>{clientName}</strong>! Il tuo ordine è in preparazione.</p>
+            <p className="done__address">{address}</p>
+            <button className="btn-primary" onClick={resetAndClose}>Chiudi</button>
+          </div>
         )}
       </aside>
 
@@ -240,21 +312,41 @@ export default function CheckoutDrawer() {
         .gps-btn:hover{border-color:#B03A2E}
         .gps-btn:disabled{opacity:.6;cursor:wait}
         .gps-confirm{font-size:.75rem;color:#2E7D32;margin-top:3px}
+        .wa-notice{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;background:#EBF5EB;border-radius:8px;border-left:3px solid #25D366;font-size:.8rem;color:#1B5E20;line-height:1.5}
+        .wa-notice__icon{color:#25D366;flex-shrink:0;margin-top:1px}
         .recap{background:#fff;border:1px solid #EDE0CC;border-radius:10px;padding:14px}
         .recap__label{font-size:.72rem;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:#7A7770;margin-bottom:8px}
         .recap__row{display:flex;justify-content:space-between;font-size:.85rem;color:#3A3A36;padding:3px 0}
         .recap__total{display:flex;justify-content:space-between;font-weight:600;font-size:.9rem;color:#1C1C1A;border-top:1px solid #EDE0CC;margin-top:8px;padding-top:8px}
-        .btn-primary{width:100%;padding:14px;background:#B03A2E;color:#fff;border:none;border-radius:12px;font-size:.95rem;font-weight:500;cursor:pointer;transition:background .15s,transform .15s}
+        .orders-closed{background:#FDECEA;border:1px solid #F5B4AD;border-radius:10px;padding:14px;font-size:.85rem;color:#8C2318;text-align:center;line-height:1.6}
+        .btn-primary{width:100%;padding:14px;background:#B03A2E;color:#fff;border:none;border-radius:12px;font-family:inherit;font-size:.95rem;font-weight:500;cursor:pointer;transition:background .15s,transform .15s}
         .btn-primary:hover:not(:disabled){background:#C9503F;transform:translateY(-1px)}
         .btn-primary:disabled{opacity:.6;cursor:not-allowed}
+
+        /* Confirm screen */
+        .confirm-screen{display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center;padding:8px 0}
+        .confirm-screen__icon{font-size:3rem}
+        .confirm-screen__title{font-family:Georgia,serif;font-size:1.2rem;font-weight:700;color:#1C1C1A}
+        .confirm-screen__text{font-size:.88rem;color:#7A7770;line-height:1.6;max-width:320px}
+        .confirm-screen__text strong{color:#1C1C1A}
+        .confirm-screen__steps{display:flex;flex-direction:column;gap:8px;width:100%;background:#fff;border:1px solid #EDE0CC;border-radius:12px;padding:14px}
+        .confirm-step{display:flex;align-items:center;gap:10px;font-size:.85rem;color:#3A3A36;text-align:left}
+        .confirm-step__num{width:24px;height:24px;border-radius:50%;background:#B03A2E;color:#fff;font-size:.72rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+        .wa-confirm-btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:16px;background:#25D366;color:#fff;border-radius:12px;font-size:1rem;font-weight:600;text-decoration:none;transition:background .15s,transform .15s;box-shadow:0 4px 16px rgba(37,211,102,.35)}
+        .wa-confirm-btn:hover{background:#20c25e;transform:translateY(-1px)}
+        .confirm-waiting{display:flex;align-items:center;gap:8px;font-size:.82rem;color:#7A7770}
+        .confirm-waiting__dot{width:8px;height:8px;border-radius:50%;background:#25D366;animation:pulse 1.5s infinite}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+        .confirm-expire{font-size:.75rem;color:#B0ACA5;text-align:center}
+
+        /* Done screen */
         .done{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:40px 24px;gap:12px;height:100%}
         .done__icon{font-size:3rem}
         .done__title{font-family:Georgia,serif;font-size:1.5rem;font-weight:700;color:#1C1C1A}
         .done__id{font-size:.78rem;font-weight:500;letter-spacing:.1em;text-transform:uppercase;color:#7A7770}
         .done__msg{font-size:.9rem;color:#3A3A36;line-height:1.5}
-        .done__address{font-size:.88rem;font-weight:500;color:#B03A2E}
-        `}
-        </style>
+        .done__address{font-size:.88rem;font-weight:500;color:#B03A2E;margin-bottom:8px}
+      `}</style>
     </>
   );
 }
