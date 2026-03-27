@@ -65,7 +65,9 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
   // Form fields
   const [clientName, setClientName] = useState("");
   const [phone,      setPhone]      = useState("");
-  const [address,    setAddress]    = useState("");
+  const [street,     setStreet]     = useState("");
+  const [civic,      setCivic]      = useState("");
+  const [cap,        setCap]        = useState("");
   const [lat,        setLat]        = useState<number | null>(null);
   const [lng,        setLng]        = useState<number | null>(null);
 
@@ -108,16 +110,20 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
         try {
           const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`);
           const d = await res.json();
-          setAddress(d.display_name ?? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
-        } catch { setAddress(`${latitude.toFixed(5)}, ${longitude.toFixed(5)}`); }
+          setStreet(d.address?.road ?? "");
+          setCivic(d.address?.house_number ?? "");
+          setCap(d.address?.postcode ?? "");
+        } catch {}
         setLocating(false);
       },
       () => setLocating(false)
     );
   };
 
+  const address = [street.trim(), civic.trim(), cap.trim()].filter(Boolean).join(", ");
+
   const placeOrder = async () => {
-    if (!clientName.trim() || !phone.trim() || !address.trim()) return;
+    if (!clientName.trim() || !phone.trim() || !street.trim() || !civic.trim()) return;
     setAddressError("");
 
     let orderLat = lat;
@@ -127,7 +133,7 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
     if (orderLat == null || orderLng == null) {
       setGeocoding(true);
       try {
-        const q = encodeURIComponent(address.trim());
+        const q = encodeURIComponent(`${address}, Italia`);
         const url = `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=it`;
         const res = await fetch(url, { headers: { "Accept-Language": "it" } });
         const results = await res.json();
@@ -208,7 +214,7 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
 
   const resetAndClose = () => {
     setOpen(false); setStep("cart");
-    setClientName(""); setPhone(""); setAddress("");
+    setClientName(""); setPhone(""); setStreet(""); setCivic(""); setCap("");
     setLat(null); setLng(null);
     setOrderId(""); setOtp(""); setOtpError(""); setAddressError("");
   };
@@ -291,11 +297,20 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
               </label>
               <div className="field"><span>Indirizzo di consegna *</span>
                 <div className="addr-row">
-                  <input type="text" placeholder="Via Roma 12, Città" value={address}
-                    onChange={(e) => { setAddress(e.target.value); setLat(null); setLng(null); setAddressError(""); }} />
-                  <button type="button" className="gps-btn" onClick={getGPS} disabled={locating}>
+                  <input type="text" placeholder="Via / Piazza / Corso…" value={street}
+                    onChange={(e) => { setStreet(e.target.value); setLat(null); setLng(null); setAddressError(""); }}
+                    autoComplete="address-line1" style={{flex:3}} />
+                  <button type="button" className="gps-btn" onClick={getGPS} disabled={locating} title="Rileva posizione">
                     {locating ? "⏳" : "📍"}
                   </button>
+                </div>
+                <div className="addr-row" style={{marginTop:6}}>
+                  <input type="text" placeholder="N° civico" value={civic}
+                    onChange={(e) => { setCivic(e.target.value); setLat(null); setLng(null); setAddressError(""); }}
+                    autoComplete="address-line2" style={{flex:1}} />
+                  <input type="text" placeholder="CAP" value={cap}
+                    onChange={(e) => { setCap(e.target.value); setLat(null); setLng(null); setAddressError(""); }}
+                    autoComplete="postal-code" inputMode="numeric" style={{flex:1}} />
                 </div>
                 {lat && <p className="gps-confirm">📍 Posizione GPS rilevata</p>}
               </div>
@@ -322,7 +337,7 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
               : !openNow
                 ? <div className="orders-closed">🕐 Al momento siamo chiusi. {hoursMessage(hours)}</div>
                 : <button className="btn-primary" onClick={placeOrder}
-                    disabled={placing || geocoding || !clientName || !phone || !address}>
+                    disabled={placing || geocoding || !clientName || !phone || !street || !civic}>
                     {geocoding ? "Verifica indirizzo…" : placing ? "Invio in corso…" : "Continua →"}
                   </button>
             }
