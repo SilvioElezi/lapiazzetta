@@ -30,35 +30,49 @@ async function launchBrowser() {
 
 async function doLogin() {
   console.log("[login] navigating to router...");
-  await page.goto(ROUTER_URL, { waitUntil: "domcontentloaded", timeout: 15000 });
+  await page.goto(ROUTER_URL, { waitUntil: "networkidle0", timeout: 20000 });
 
-  // Wait for password input — TP-Link MR600 has only a password field on login
-  await page.waitForSelector('input[type="password"]', { timeout: 10000 });
-  await page.evaluate(() => {
-    const el = document.querySelector('input[type="password"]');
-    if (el) el.value = "";
-  });
-  await page.type('input[type="password"]', ROUTER_PASSWORD, { delay: 30 });
+  // Wait for login form
+  await page.waitForSelector("#pc-login-password", { timeout: 15000 });
+  console.log("[login] login form found");
 
-  // Click the login button — try multiple selectors
-  const loginBtn =
-    (await page.$('#pc-login-btn')) ||
-    (await page.$('button[id*="login"]')) ||
-    (await page.$('button[id*="Login"]')) ||
-    (await page.$('.login-btn')) ||
-    (await page.$('button[type="button"]'));
+  // TP-Link uses tpInput jQuery widget — set password via widget API
+  await page.evaluate((pwd) => {
+    if (window.$ && $("#pc-login-password").tpInput) {
+      $("#pc-login-password").tpInput("val", pwd);
+    }
+  }, ROUTER_PASSWORD);
 
-  if (!loginBtn) throw new Error("Login button not found");
-  await loginBtn.click();
+  // Click the login button via JS to avoid Puppeteer navigation waits
+  await page.evaluate(() => { document.getElementById("pc-login-btn").click(); });
+  console.log("[login] clicked login button...");
 
-  // Wait for the dashboard to load (main nav or known element)
-  await page.waitForFunction(
-    () => document.body.innerText.length > 500,
-    { timeout: 12000 }
-  );
+  // Poll for "force other device to log off" dialog (getBusy may take a few seconds)
+  for (let i = 0; i < 16; i++) {
+    await new Promise((r) => setTimeout(r, 500));
+    const clicked = await page.evaluate(() => {
+      const el = document.getElementById("alert-container");
+      // Use computed style — offsetParent is null for position:fixed elements
+      if (el && window.getComputedStyle(el).display !== "none") {
+        const btn = document.getElementById("confirm-yes");
+        if (btn) { btn.click(); return true; }
+      }
+      return false;
+    });
+    if (clicked) {
+      console.log("[login] forced previous session to log off");
+      break;
+    }
+  }
 
-  // Small pause for SPA to settle
-  await new Promise((r) => setTimeout(r, 2000));
+  // Wait for dashboard — fixed 12s covers login + dashboard load
+  await new Promise((r) => setTimeout(r, 12000));
+
+  const bodyLen = await page.evaluate(() => document.body.innerText.length).catch(() => 0);
+  if (bodyLen < 400) throw new Error(`Login failed — dashboard not loaded (bodyLen=${bodyLen})`);
+
+
+
   loggedIn = true;
   console.log("[login] success");
 }
@@ -67,35 +81,10 @@ async function navigateToSmsForm() {
   console.log("[sms] navigating to New Message form...");
 
   // Use the router's own JS to load the SMS compose page
-  const loaded = await page.evaluate(() => {
-    if (window.$ && typeof $.loadMain === "function") {
-      $.loadMain("lteSmsNewMsg.htm");
-      return true;
-    }
-    return false;
-  });
+  await page.evaluate(() => { $.loadMain("lteSmsNewMsg.htm"); });
 
-  if (!loaded) {
-    // Fallback: try clicking through the menu
-    console.log("[sms] $.loadMain not available, trying menu clicks...");
-
-    // Try Advanced tab
-    const advTab = await page.$('a[id*="advanced"], li[id*="advanced"], [class*="advanced"]');
-    if (advTab) await advTab.click();
-    await new Promise((r) => setTimeout(r, 1000));
-
-    // Try SMS menu item
-    const smsItem = await page.$('[href*="sms"], [id*="sms"], [class*="sms"]');
-    if (smsItem) await smsItem.click();
-    await new Promise((r) => setTimeout(r, 1000));
-
-    // Try New Message button
-    const newMsg = await page.$('[id*="newMsg"], [id*="new-msg"], button');
-    if (newMsg) await newMsg.click();
-  }
-
-  // Wait for the SMS form to appear
-  await page.waitForSelector("#toNumber", { timeout: 15000 });
+  // Wait for the SMS compose form
+  await page.waitForSelector("#toNumber", { timeout: 20000 });
   console.log("[sms] form loaded");
 }
 
