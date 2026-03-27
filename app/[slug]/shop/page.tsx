@@ -36,8 +36,9 @@ function LoginScreen({ onLogin, slug }: { onLogin: (user: StaffUser) => void; sl
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? "Errore"); }
       else {
-        localStorage.setItem("shop_user", JSON.stringify(data.user));
-        onLogin(data.user);
+        const user = { ...data.user, businesses: data.businesses ?? [] };
+        localStorage.setItem("shop_user", JSON.stringify(user));
+        onLogin(user);
       }
     } catch { setError("Errore di connessione"); }
     finally { setLoading(false); }
@@ -445,21 +446,22 @@ function MenuTab({ slug }: { slug: string }) {
 
 // ─── ROOT PAGE ──────────────────────────────────────────────
 export default function ShopPage({ params }: { params: Promise<{ slug: string }> }) {
-  const { slug } = use(params);
+  const { slug: urlSlug } = use(params);
 
   const [user, setUser] = useState<StaffUser | null>(() => {
     if (typeof window === "undefined") return null;
     try { return JSON.parse(localStorage.getItem("shop_user") ?? "null"); } catch { return null; }
   });
   const [tab, setTab] = useState<"orders" | "menu" | "settings">("orders");
+  const [activeSlug, setActiveSlug] = useState(urlSlug);
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(null);
 
   useEffect(() => {
-    fetch(`/${slug}/api/settings`)
+    fetch(`/${activeSlug}/api/settings`)
       .then((r) => r.json())
       .then((d) => { if (d.subscription_expires_at) setSubscriptionExpiresAt(d.subscription_expires_at); })
       .catch(() => {});
-  }, [slug]);
+  }, [activeSlug]);
 
   const subscriptionWarning = (() => {
     if (!subscriptionExpiresAt || !user || user.role !== "admin") return null;
@@ -470,12 +472,22 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
     return { msg: `L'abbonamento scade tra ${daysLeft} giorn${daysLeft === 1 ? "o" : "i"} (${exp.toLocaleDateString("it-IT")}). Rinnova presto!`, color: "#8A5E12", bg: "#FEF3DB", border: "#F9DC7D" };
   })();
 
-  const handleLogin = (u: StaffUser) => { setUser(u); };
+  const handleLogin = (u: StaffUser) => {
+    setUser(u);
+    setActiveSlug(urlSlug);
+    setTab("orders");
+  };
   const logout = () => { localStorage.removeItem("shop_user"); setUser(null); };
+
+  const switchBusiness = (s: string) => {
+    setActiveSlug(s);
+    setTab("orders");
+    setSubscriptionExpiresAt(null);
+  };
 
   if (!user) return (
     <>
-      <LoginScreen onLogin={handleLogin} slug={slug} />
+      <LoginScreen onLogin={handleLogin} slug={urlSlug} />
       <style>{styles}</style>
     </>
   );
@@ -485,6 +497,10 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
     delivery:  "🛵 Fattorino",
     admin:     "👑 Admin",
   };
+
+  const multiBusinesses = user.role === "admin" && user.businesses && user.businesses.length > 1
+    ? user.businesses
+    : null;
 
   return (
     <div className="shop">
@@ -505,6 +521,19 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
             <button className="shop__tab shop__tab--logout" onClick={logout}>🚪 Esci</button>
           </nav>
         </div>
+        {multiBusinesses && (
+          <div className="shop__biz-switcher">
+            {multiBusinesses.map((b) => (
+              <button
+                key={b.slug}
+                className={`biz-tab${activeSlug === b.slug ? " biz-tab--active" : ""}`}
+                onClick={() => switchBusiness(b.slug)}
+              >
+                {b.name}
+              </button>
+            ))}
+          </div>
+        )}
       </header>
       {subscriptionWarning && (
         <div style={{background:subscriptionWarning.bg,borderBottom:`1px solid ${subscriptionWarning.border}`,padding:"10px 20px",fontSize:".83rem",fontWeight:500,color:subscriptionWarning.color,textAlign:"center"}}>
@@ -512,9 +541,9 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         </div>
       )}
       <main className="shop__main">
-        {tab === "orders"   && <OrdersTab role={user.role} slug={slug} />}
-        {tab === "menu"     && user.role === "admin" && <MenuTab slug={slug} />}
-        {tab === "settings" && user.role === "admin" && <SettingsTab slug={slug} />}
+        {tab === "orders"   && <OrdersTab role={user.role} slug={activeSlug} />}
+        {tab === "menu"     && user.role === "admin" && <MenuTab slug={activeSlug} />}
+        {tab === "settings" && user.role === "admin" && <SettingsTab slug={activeSlug} />}
       </main>
       <style>{styles}</style>
     </div>
@@ -546,6 +575,10 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA;min-height:100vh}
 .shop__tab--active{background:rgba(253,246,236,.18);color:#FDF6EC}
 .shop__tab--logout{color:rgba(255,100,80,.7)}
 .shop__tab--logout:hover{background:rgba(255,100,80,.12);color:#ff6450}
+.shop__biz-switcher{display:flex;gap:4px;padding:0 20px 10px;max-width:1200px;margin:0 auto;flex-wrap:wrap}
+.biz-tab{padding:5px 14px;background:rgba(253,246,236,.1);border:1px solid rgba(253,246,236,.15);color:rgba(253,246,236,.55);border-radius:999px;cursor:pointer;font-size:.78rem;font-weight:500;transition:all .15s;white-space:nowrap}
+.biz-tab:hover{background:rgba(253,246,236,.18);color:#FDF6EC}
+.biz-tab--active{background:rgba(176,58,46,.7);border-color:rgba(176,58,46,.8);color:#FDF6EC}
 .shop__main{max-width:1200px;margin:0 auto;padding:20px}
 .tab-content{display:flex;flex-direction:column;gap:16px}
 .orders-stats{display:flex;align-items:center;gap:8px;flex-wrap:wrap}

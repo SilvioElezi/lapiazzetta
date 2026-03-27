@@ -45,6 +45,7 @@ export type StaffUser = {
   username: string;
   role: StaffRole;
   name: string;
+  businesses?: { id: string; slug: string; name: string }[];
 };
 
 export type DayHours = {

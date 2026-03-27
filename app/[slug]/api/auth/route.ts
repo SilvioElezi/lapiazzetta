@@ -34,5 +34,24 @@ export async function POST(
     return NextResponse.json({ error: "Credenziali errate" }, { status: 401 });
   }
 
-  return NextResponse.json({ ok: true, user: data });
+  // For admin users, find all other businesses accessible with the same credentials
+  let businesses: { id: string; slug: string; name: string }[] = [];
+  if (data.role === "admin") {
+    const { data: allStaff } = await supabaseAdmin
+      .from("staff")
+      .select("business_id, businesses(id, slug, name)")
+      .eq("username", username.trim())
+      .eq("password", password.trim())
+      .eq("role", "admin");
+
+    if (allStaff) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      businesses = (allStaff as any[])
+        .map((s) => s.businesses)
+        .flat()
+        .filter((b): b is { id: string; slug: string; name: string } => b != null);
+    }
+  }
+
+  return NextResponse.json({ ok: true, user: data, businesses });
 }

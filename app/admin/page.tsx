@@ -1,6 +1,9 @@
 "use client";
 import { useState, useEffect } from "react";
-import type { Business } from "../../lib/types";
+import type { Business, StaffRole } from "../../lib/types";
+
+type StaffMember = { id: number; username: string; role: StaffRole; name: string };
+type StaffForm = { name: string; username: string; password: string; role: StaffRole };
 
 type FormState = Omit<Business, "id"> & { id?: string };
 
@@ -37,8 +40,12 @@ export default function AdminPage() {
         try {
           const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, { headers: { "Accept-Language": "it" } });
           const d = await res.json();
-          setLocationLabel(d.display_name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
-        } catch { setLocationLabel(`${lat.toFixed(5)}, ${lng.toFixed(5)}`); }
+          const label = d.display_name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+          setForm((f) => ({ ...f, lat, lng, address: label }));
+          setLocationLabel(label);
+        } catch {
+          setLocationLabel(`${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+        }
         setLocating(false);
       },
       () => setLocating(false)
@@ -55,7 +62,7 @@ export default function AdminPage() {
       if (results && results.length > 0) {
         const lat = parseFloat(results[0].lat);
         const lng = parseFloat(results[0].lon);
-        setForm((f) => ({ ...f, lat, lng }));
+        setForm((f) => ({ ...f, lat, lng, address: results[0].display_name }));
         setLocationLabel(results[0].display_name);
       } else {
         setLocationLabel("Indirizzo non trovato");
@@ -206,7 +213,6 @@ export default function AdminPage() {
               <Field label="Nome *" value={form.name} onChange={(v) => setForm((f) => ({ ...f, name: v }))} />
               <Field label="Slug * (es: lapiaggetta)" value={form.slug} onChange={(v) => setForm((f) => ({ ...f, slug: v.toLowerCase().replace(/\s+/g, "-") }))} disabled={editing !== "new"} />
               <Field label="Telefono" value={form.phone ?? ""} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
-              <Field label="Indirizzo" value={form.address ?? ""} onChange={(v) => setForm((f) => ({ ...f, address: v }))} style={{ gridColumn: "span 2" }} />
               <Field label="Raggio consegna (km)" value={form.radius_km.toString()} onChange={(v) => setForm((f) => ({ ...f, radius_km: parseFloat(v) || 5 }))} type="number" />
             </div>
 
@@ -217,17 +223,18 @@ export default function AdminPage() {
                 <div style={{display:"flex",flex:1,minWidth:200,border:"1.5px solid #EDE0CC",borderRadius:8,overflow:"hidden",background:"#fff"}}>
                   <input
                     type="text"
-                    placeholder="Cerca indirizzo… (es: Via Roma 1, Bergamo)"
-                    defaultValue={form.address ?? ""}
-                    onKeyDown={(e) => e.key === "Enter" && searchAddress((e.target as HTMLInputElement).value)}
+                    placeholder="Indirizzo (es: Via Roma 1, Bergamo)"
+                    value={form.address ?? ""}
+                    onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                    onKeyDown={(e) => e.key === "Enter" && searchAddress(form.address ?? "")}
                     style={{flex:1,padding:"10px 12px",border:"none",outline:"none",fontSize:".88rem",fontFamily:"inherit",color:"#1C1C1A"}}
                   />
                   <button
                     type="button"
-                    onClick={(e) => searchAddress(((e.currentTarget as HTMLButtonElement).previousElementSibling as HTMLInputElement).value)}
+                    onClick={() => searchAddress(form.address ?? "")}
                     style={{padding:"0 14px",background:"#1C1C1A",color:"#FDF6EC",border:"none",cursor:"pointer",fontSize:".82rem",fontWeight:500,whiteSpace:"nowrap"}}
                   >
-                    {locating ? "…" : "Cerca"}
+                    {locating ? "…" : "Geocodifica"}
                   </button>
                 </div>
                 <button type="button" onClick={useMyLocation} disabled={locating} style={s.gpsBtn}>
@@ -290,32 +297,7 @@ export default function AdminPage() {
         ) : (
           <div style={s.bizList}>
             {businesses.map((b) => (
-              <div key={b.id} style={s.bizCard}>
-                <div style={{display:"flex",alignItems:"center",gap:12,flex:1,minWidth:0}}>
-                  {b.logo_url
-                    ? <img src={b.logo_url} alt={b.name} style={{width:40,height:40,objectFit:"contain",borderRadius:6,border:"1px solid #EDE0CC",flexShrink:0}} />
-                    : <div style={{width:40,height:40,background:"#F5EADA",borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.2rem",flexShrink:0}}>🍕</div>
-                  }
-                  <div style={{minWidth:0}}>
-                    <p style={s.bizName}>{b.name}</p>
-                    <p style={s.bizSlug}>/{b.slug}</p>
-                    {b.address && <p style={s.bizDetail}>{b.address}</p>}
-                    <p style={s.bizDetail}>Raggio: {b.radius_km} km{b.phone ? ` · ${b.phone}` : ""}</p>
-                    {b.subscription_expires_at && (() => {
-                      const exp = new Date(b.subscription_expires_at);
-                      const daysLeft = Math.ceil((exp.getTime() - Date.now()) / 86400000);
-                      const color = daysLeft <= 0 ? "#B03A2E" : daysLeft <= 30 ? "#8A5E12" : "#2E7D32";
-                      const label = daysLeft <= 0 ? "Abbonamento scaduto" : `Abbonamento: ${daysLeft}gg rimasti`;
-                      return <p style={{ ...s.bizDetail, color, fontWeight: 600 }}>📅 {label} ({exp.toLocaleDateString("it-IT")})</p>;
-                    })()}
-                  </div>
-                </div>
-                <div style={{display:"flex",gap:6,flexShrink:0}}>
-                  <a href={`/${b.slug}`} target="_blank" rel="noopener noreferrer" style={s.linkBtn}>🌐</a>
-                  <a href={`/${b.slug}/shop`} target="_blank" rel="noopener noreferrer" style={s.linkBtn}>🍕</a>
-                  <button onClick={() => startEdit(b)} style={s.editBtn}>✏️ Modifica</button>
-                </div>
-              </div>
+              <BizRow key={b.id} b={b} onEdit={startEdit} />
             ))}
             {businesses.length === 0 && (
               <p style={{color:"#7A7770",textAlign:"center",padding:40}}>Nessun business ancora. Creane uno!</p>
@@ -323,6 +305,172 @@ export default function AdminPage() {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Business row with staff panel ──────────────────────────
+function BizRow({ b, onEdit }: { b: Business; onEdit: (b: Business) => void }) {
+  const [showStaff, setShowStaff] = useState(false);
+  return (
+    <div style={{...s.bizCard, flexDirection:"column", alignItems:"stretch", gap:0, padding:0}}>
+      <div style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",flexWrap:"wrap"}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,flex:1,minWidth:0}}>
+          {b.logo_url
+            ? <img src={b.logo_url} alt={b.name} style={{width:40,height:40,objectFit:"contain",borderRadius:6,border:"1px solid #EDE0CC",flexShrink:0}} />
+            : <div style={{width:40,height:40,background:"#F5EADA",borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.2rem",flexShrink:0}}>🍕</div>
+          }
+          <div style={{minWidth:0}}>
+            <p style={s.bizName}>{b.name}</p>
+            <p style={s.bizSlug}>/{b.slug}</p>
+            {b.address && <p style={s.bizDetail}>{b.address}</p>}
+            <p style={s.bizDetail}>Raggio: {b.radius_km} km{b.phone ? ` · ${b.phone}` : ""}</p>
+            {b.subscription_expires_at && (() => {
+              const exp = new Date(b.subscription_expires_at as string);
+              const daysLeft = Math.ceil((exp.getTime() - Date.now()) / 86400000);
+              const color = daysLeft <= 0 ? "#B03A2E" : daysLeft <= 30 ? "#8A5E12" : "#2E7D32";
+              const label = daysLeft <= 0 ? "Abbonamento scaduto" : `Abbonamento: ${daysLeft}gg rimasti`;
+              return <p style={{ ...s.bizDetail, color, fontWeight: 600 }}>📅 {label} ({exp.toLocaleDateString("it-IT")})</p>;
+            })()}
+          </div>
+        </div>
+        <div style={{display:"flex",gap:6,flexShrink:0}}>
+          <a href={`/${b.slug}`} target="_blank" rel="noopener noreferrer" style={s.linkBtn}>🌐</a>
+          <a href={`/${b.slug}/shop`} target="_blank" rel="noopener noreferrer" style={s.linkBtn}>🍕</a>
+          <button onClick={() => onEdit(b)} style={s.editBtn}>✏️ Modifica</button>
+          <button onClick={() => setShowStaff((v) => !v)} style={{...s.editBtn, color: showStaff ? "#B03A2E" : "#1C1C1A"}}>
+            👥 Staff {showStaff ? "▲" : "▼"}
+          </button>
+        </div>
+      </div>
+      {showStaff && <StaffPanel businessId={b.id} />}
+    </div>
+  );
+}
+
+const ROLE_LABELS: Record<StaffRole, string> = { admin: "👑 Admin", reception: "🧑‍💼 Receptionist", delivery: "🛵 Fattorino" };
+const EMPTY_STAFF_FORM: StaffForm = { name: "", username: "", password: "", role: "reception" };
+
+function StaffPanel({ businessId }: { businessId: string }) {
+  const [staff, setStaff] = useState<StaffMember[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingId, setEditingId] = useState<number | "new" | null>(null);
+  const [form, setForm] = useState<StaffForm>(EMPTY_STAFF_FORM);
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  const reload = () => {
+    setLoading(true);
+    fetch(`/admin/api/businesses/${businessId}/staff`)
+      .then((r) => r.json())
+      .then((d) => { setStaff(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  };
+
+  useEffect(() => { reload(); }, [businessId]);
+
+  const startEdit = (m: StaffMember) => {
+    setEditingId(m.id);
+    setForm({ name: m.name, username: m.username, password: "", role: m.role });
+    setErr("");
+  };
+  const startCreate = () => { setEditingId("new"); setForm(EMPTY_STAFF_FORM); setErr(""); };
+  const cancelEdit = () => { setEditingId(null); setErr(""); };
+
+  const save = async () => {
+    if (!form.username.trim() || !form.name.trim()) { setErr("Nome e username obbligatori"); return; }
+    if (editingId === "new" && !form.password.trim()) { setErr("Password obbligatoria"); return; }
+    setSaving(true); setErr("");
+    try {
+      let res: Response;
+      if (editingId === "new") {
+        res = await fetch(`/admin/api/businesses/${businessId}/staff`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form),
+        });
+      } else {
+        const body: Partial<StaffForm> = { name: form.name, username: form.username, role: form.role };
+        if (form.password.trim()) body.password = form.password.trim();
+        res = await fetch(`/admin/api/businesses/${businessId}/staff/${editingId}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+      }
+      const d = await res.json();
+      if (!res.ok) { setErr(d.error ?? "Errore"); return; }
+      setEditingId(null);
+      reload();
+    } catch { setErr("Errore di connessione"); }
+    finally { setSaving(false); }
+  };
+
+  const remove = async (id: number) => {
+    if (!confirm("Eliminare questo utente?")) return;
+    await fetch(`/admin/api/businesses/${businessId}/staff/${id}`, { method: "DELETE" });
+    reload();
+  };
+
+  return (
+    <div style={{borderTop:"1px solid #EDE0CC",background:"#FAFAF8",padding:"16px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <p style={{...s.fieldLabel, fontSize:".8rem"}}>Gestione staff</p>
+        {editingId === null && (
+          <button onClick={startCreate} style={{...s.btnPrimary, padding:"6px 12px", fontSize:".78rem"}}>+ Aggiungi</button>
+        )}
+      </div>
+
+      {err && <p style={{...s.errText, textAlign:"left", marginBottom:8}}>{err}</p>}
+
+      {editingId !== null && (
+        <div style={{background:"#fff",border:"1px solid #EDE0CC",borderRadius:10,padding:"14px 16px",marginBottom:12,display:"flex",flexDirection:"column",gap:10}}>
+          <p style={{...s.fieldLabel}}>{editingId === "new" ? "Nuovo utente" : "Modifica utente"}</p>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"10px 14px"}}>
+            <label style={{display:"flex",flexDirection:"column",gap:3}}>
+              <span style={s.fieldLabel}>Nome</span>
+              <input value={form.name} onChange={(e) => setForm((f) => ({...f, name: e.target.value}))} style={s.input} placeholder="Mario Rossi" />
+            </label>
+            <label style={{display:"flex",flexDirection:"column",gap:3}}>
+              <span style={s.fieldLabel}>Username</span>
+              <input value={form.username} onChange={(e) => setForm((f) => ({...f, username: e.target.value}))} style={s.input} placeholder="mario" />
+            </label>
+            <label style={{display:"flex",flexDirection:"column",gap:3}}>
+              <span style={s.fieldLabel}>Password {editingId !== "new" && <span style={{fontWeight:400}}>(lascia vuoto per non cambiare)</span>}</span>
+              <input type="password" value={form.password} onChange={(e) => setForm((f) => ({...f, password: e.target.value}))} style={s.input} placeholder={editingId !== "new" ? "••••••••" : ""} />
+            </label>
+            <label style={{display:"flex",flexDirection:"column",gap:3}}>
+              <span style={s.fieldLabel}>Ruolo</span>
+              <select value={form.role} onChange={(e) => setForm((f) => ({...f, role: e.target.value as StaffRole}))} style={{...s.input}}>
+                <option value="admin">👑 Admin</option>
+                <option value="reception">🧑‍💼 Receptionist</option>
+                <option value="delivery">🛵 Fattorino</option>
+              </select>
+            </label>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={save} disabled={saving} style={{...s.btnPrimary, padding:"8px 16px", fontSize:".82rem"}}>{saving ? "Salvataggio…" : "Salva"}</button>
+            <button onClick={cancelEdit} style={{...s.btnGhost, padding:"8px 16px", fontSize:".82rem"}}>Annulla</button>
+          </div>
+        </div>
+      )}
+
+      {loading ? (
+        <p style={{fontSize:".8rem",color:"#7A7770"}}>Caricamento…</p>
+      ) : staff.length === 0 ? (
+        <p style={{fontSize:".8rem",color:"#B0ACA5",fontStyle:"italic"}}>Nessun utente ancora.</p>
+      ) : (
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {staff.map((m) => (
+            <div key={m.id} style={{display:"flex",alignItems:"center",gap:10,background:"#fff",border:"1px solid #EDE0CC",borderRadius:8,padding:"10px 12px"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{fontSize:".88rem",fontWeight:600,color:"#1C1C1A"}}>{m.name}</p>
+                <p style={{fontSize:".75rem",color:"#7A7770"}}>{m.username} · {ROLE_LABELS[m.role]}</p>
+              </div>
+              <div style={{display:"flex",gap:6,flexShrink:0}}>
+                <button onClick={() => startEdit(m)} style={s.editBtn}>✏️</button>
+                <button onClick={() => remove(m.id)} style={{...s.editBtn, color:"#B03A2E", borderColor:"#F5B4AD"}}>🗑</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
