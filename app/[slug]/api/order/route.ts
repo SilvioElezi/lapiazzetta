@@ -20,7 +20,7 @@ async function sendSmsOtp(phone: string, otp: string): Promise<void> {
   const res = await fetch(`${bridgeUrl}/send-sms`, {
     method:  "POST",
     headers: { "Content-Type": "application/json", "x-bridge-secret": secret },
-    body:    JSON.stringify({ to: phone, message: `Il tuo codice di conferma ordine è: ${otp}` }),
+    body:    JSON.stringify({ to: phone, message: `${otp} è il tuo codice di verifica. Se non hai richiesto questo codice, ignoralo.` }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -50,8 +50,9 @@ export async function POST(
   if (body.lat != null && body.lng != null && business.lat != null && business.lng != null) {
     const dist = haversineKm(business.lat, business.lng, body.lat, body.lng);
     if (dist > business.radius_km) {
+      const distFmt = dist.toLocaleString("it-IT", { maximumFractionDigits: 1 });
       return NextResponse.json(
-        { error: `Fuori dalla zona di consegna (${dist.toFixed(1)} km, max ${business.radius_km} km)` },
+        { error: `Ci dispiace, ma il tuo indirizzo si trova a ${distFmt} km da noi e la nostra zona di consegna arriva fino a ${business.radius_km} km. Speriamo di poterti servire presto!` },
         { status: 422 }
       );
     }

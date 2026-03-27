@@ -105,8 +105,9 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
     ) {
       const dist = haversineKm(business.lat, business.lng, orderLat, orderLng);
       if (dist > business.radius_km) {
+        const distFmt = dist.toLocaleString("it-IT", { maximumFractionDigits: 1 });
         setAddressError(
-          `Il tuo indirizzo è a ${dist.toFixed(1)} km dal locale. La consegna arriva fino a ${business.radius_km} km.`
+          `Ci dispiace, ma il tuo indirizzo si trova a ${distFmt} km da noi e la nostra zona di consegna arriva fino a ${business.radius_km} km. Speriamo di poterti servire presto!`
         );
         return;
       }
