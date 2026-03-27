@@ -4,7 +4,7 @@ import MenuDemo from "../components/MenuDemo";
 export const metadata: Metadata = {
   title: "8bit.al — Piattaforma ordini online per pizzerie e ristoranti",
   description:
-    "Sistema di ordinazione online multi-tenant con conferma via SMS, dashboard staff in tempo reale e notifiche Telegram. Tutto incluso, nessun costo di setup.",
+    "Sistema di ordinazione online multi-tenant con conferma via SMS e dashboard staff in tempo reale. Tutto incluso, nessun costo di setup.",
 };
 
 export default function LandingPage() {
@@ -119,8 +119,8 @@ export default function LandingPage() {
             Il tuo ristorante online,<br /><span>pronto in 24 ore</span>
           </h1>
           <p className="hero__sub">
-            Sistema di ordinazione completo con conferma via SMS, dashboard staff in tempo reale
-            e notifiche Telegram. Nessun costo di setup, nessuna commissione sugli ordini.
+            Sistema di ordinazione completo con conferma via SMS e dashboard staff in tempo reale.
+            Nessun costo di setup, nessuna commissione sugli ordini.
           </p>
           <div className="hero__actions">
             <a href="https://wa.me/393520190999" className="btn-primary">Inizia ora →</a>
@@ -156,10 +156,10 @@ export default function LandingPage() {
         </p>
         <div className="features-grid">
           {[
-            ["🛒", "Ordini online 24/7", "I clienti sfogliano il menu, aggiungono al carrello e ordinano direttamente dal tuo sito senza app da scaricare."],
+            ["🛒", "Ordini durante gli orari", "I clienti sfogliano il menu e ordinano direttamente dal tuo sito negli orari di apertura che scegli tu — senza app da scaricare."],
             ["💬", "Conferma via SMS", "Ogni ordine viene confermato con un codice OTP a 4 cifre inviato via SMS — niente ordini fantasma."],
             ["📋", "Dashboard staff", "Pannello in tempo reale per reception, cucina e fattorini. Ogni ruolo vede solo ciò che gli serve."],
-            ["🔔", "Notifiche Telegram", "Quando un ordine è pronto per la consegna, il fattorino riceve un messaggio Telegram automatico."],
+            ["🕐", "Orari configurabili", "Imposta fino a due turni per ogni giorno della settimana. Fuori orario, il sito lo comunica automaticamente al cliente."],
             ["📍", "Raggio di consegna", "Il sistema calcola la distanza GPS del cliente e rifiuta automaticamente gli ordini fuori zona."],
             ["⚙️", "Pannello admin", "Gestisci menu, orari, costo di consegna e ordini online direttamente dal browser, senza tecnici."],
             ["🌐", "Multi-locale", "La stessa piattaforma può gestire più ristoranti ognuno con il proprio URL, menu e staff separati."],
@@ -245,7 +245,7 @@ export default function LandingPage() {
                 "Sito di ordinazione personalizzato",
                 "Conferma ordini via SMS",
                 "Dashboard staff illimitata",
-                "Notifiche Telegram",
+                "Orari configurabili con doppio turno",
                 "Pannello admin per menu e impostazioni",
                 "Supporto tecnico incluso",
                 "Nessuna commissione sugli ordini",
