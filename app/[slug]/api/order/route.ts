@@ -6,8 +6,26 @@ function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6).toUpperCase();
 }
 
-function generateToken(): string {
-  return Math.random().toString(36).slice(2, 10).toUpperCase();
+function generateOtp(): string {
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+async function sendSmsOtp(phone: string, otp: string): Promise<void> {
+  const bridgeUrl = process.env.SMS_BRIDGE_URL;
+  const secret    = process.env.BRIDGE_SECRET;
+  if (!bridgeUrl || !secret) {
+    console.warn("[sms] SMS_BRIDGE_URL or BRIDGE_SECRET not set — skipping SMS");
+    return;
+  }
+  const res = await fetch(`${bridgeUrl}/send-sms`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", "x-bridge-secret": secret },
+    body:    JSON.stringify({ to: phone, message: `Il tuo codice di conferma ordine è: ${otp}` }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error ?? `SMS bridge error ${res.status}`);
+  }
 }
 
 export async function POST(
@@ -18,7 +36,7 @@ export async function POST(
 
   const { data: business, error: bizErr } = await supabaseAdmin
     .from("businesses")
-    .select("id, slug, name, wa_phone, lat, lng, radius_km")
+    .select("id, slug, name, lat, lng, radius_km")
     .eq("slug", slug)
     .single();
 
@@ -28,7 +46,7 @@ export async function POST(
 
   const body = await req.json();
 
-  // Haversine distance validation (only when GPS coords provided)
+  // Haversine distance validation
   if (body.lat != null && body.lng != null && business.lat != null && business.lng != null) {
     const dist = haversineKm(business.lat, business.lng, body.lat, body.lng);
     if (dist > business.radius_km) {
@@ -39,8 +57,8 @@ export async function POST(
     }
   }
 
-  const id    = generateId();
-  const token = generateToken();
+  const id  = generateId();
+  const otp = generateOtp();
 
   const order = {
     id,
@@ -53,21 +71,20 @@ export async function POST(
     items:        body.items,
     total:        body.total,
     status:       "pending",
-    confirm_code: token,
+    confirm_code: otp,
     placed_at:    new Date().toISOString(),
   };
 
   const { error } = await supabaseAdmin.from("orders").insert(order);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const baseUrl    = process.env.NEXT_PUBLIC_SITE_URL ?? "https://lapiaggetta.8bit.al";
-  const confirmUrl = `${baseUrl}/${slug}/api/confirm?id=${id}&token=${token}`;
+  // Send OTP via SMS bridge (non-blocking on error — order is saved regardless)
+  try {
+    await sendSmsOtp(body.phone, otp);
+  } catch (smsErr) {
+    console.error("[sms] failed to send OTP:", smsErr);
+    // Don't fail the order — customer can still confirm if we return the otp in dev
+  }
 
-  const waPhone   = (business.wa_phone ?? "393308860293").replace(/\D/g, "");
-  const waMessage = encodeURIComponent(
-    `🍕 Confermo il mio ordine #${id}\n👤 ${body.clientName}\n📍 ${body.address}\n\nLink conferma: ${confirmUrl}`
-  );
-  const waUrl = `https://wa.me/${waPhone}?text=${waMessage}`;
-
-  return NextResponse.json({ ok: true, id, token, confirmUrl, waUrl });
+  return NextResponse.json({ ok: true, id });
 }

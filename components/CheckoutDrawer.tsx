@@ -23,10 +23,11 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
   // Order result
   const [placing,    setPlacing]    = useState(false);
   const [orderId,    setOrderId]    = useState("");
-  const [waUrl,      setWaUrl]      = useState("");
-  const [confirmUrl, setConfirmUrl] = useState("");
-  const [confirmed,  setConfirmed]  = useState(false);
-  const [polling,    setPolling]    = useState(false);
+
+  // OTP confirmation
+  const [otp,        setOtp]        = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [otpError,   setOtpError]   = useState("");
 
   const itemCount = cart.reduce((s: number, i: any) => s + i.qty, 0);
 
@@ -37,24 +38,6 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
       .then((d) => setOnlineOrders(d.online_orders ?? true))
       .catch(() => {});
   }, [slug]);
-
-  // Poll to check if order was confirmed
-  useEffect(() => {
-    if (!polling || !orderId) return;
-    const interval = setInterval(async () => {
-      try {
-        const statusUrl = slug ? `/${slug}/api/order-status?id=${orderId}` : `/api/order-status?id=${orderId}`;
-        const res = await fetch(statusUrl);
-        const data = await res.json();
-        if (data.status === "new") {
-          setConfirmed(true);
-          setPolling(false);
-          setStep("done");
-        }
-      } catch {}
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [polling, orderId]);
 
   const getGPS = () => {
     if (!navigator.geolocation) return;
@@ -94,20 +77,35 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setOrderId(data.id);
-      setWaUrl(data.waUrl);
-      setConfirmUrl(data.confirmUrl);
+      setOtp("");
+      setOtpError("");
       setStep("confirm");
-      setPolling(true);
-    } catch { alert("Errore nell'invio. Riprova."); }
+    } catch (err: any) { alert(err.message ?? "Errore nell'invio. Riprova."); }
     finally { setPlacing(false); }
+  };
+
+  const confirmOtp = async () => {
+    if (otp.length !== 4) { setOtpError("Inserisci il codice a 4 cifre"); return; }
+    setConfirming(true); setOtpError("");
+    try {
+      const confirmUrl = slug ? `/${slug}/api/confirm` : "/api/confirm";
+      const res = await fetch(confirmUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: orderId, otp }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setOtpError(data.error ?? "Codice non corretto"); return; }
+      setStep("done");
+    } catch { setOtpError("Errore di connessione. Riprova."); }
+    finally { setConfirming(false); }
   };
 
   const resetAndClose = () => {
     setOpen(false); setStep("cart");
     setClientName(""); setPhone(""); setAddress("");
     setLat(null); setLng(null);
-    setOrderId(""); setWaUrl(""); setConfirmUrl("");
-    setConfirmed(false); setPolling(false);
+    setOrderId(""); setOtp(""); setOtpError("");
   };
 
   return (
@@ -185,11 +183,9 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
                 </div>
                 {lat && <p className="gps-confirm">📍 Posizione GPS rilevata</p>}
               </div>
-              <div className="wa-notice">
-                <span className="wa-notice__icon">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                </span>
-                <span>Dovrai confermare l&apos;ordine tramite <strong>WhatsApp</strong>. Assicurati di avere WhatsApp installato.</span>
+              <div className="sms-notice">
+                <span className="sms-notice__icon">💬</span>
+                <span>Riceverai un <strong>codice SMS</strong> sul numero indicato per confermare l&apos;ordine.</span>
               </div>
               <div className="recap">
                 <p className="recap__label">Riepilogo</p>
@@ -202,7 +198,7 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
           </div>
           <div className="drawer__foot">
             {!onlineOrders
-              ? <div className="orders-closed">🔴 Ordini online sospesi. Chiamaci al +39 030 886 0293</div>
+              ? <div className="orders-closed">🔴 Ordini online sospesi. Chiamaci al {business?.phone ?? "+39 030 886 0293"}</div>
               : <button className="btn-primary" onClick={placeOrder}
                   disabled={placing || !clientName || !phone || !address}>
                   {placing ? "Invio in corso…" : "Continua →"}
@@ -211,50 +207,44 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
           </div>
         </>}
 
-        {/* ── CONFIRM ── */}
+        {/* ── CONFIRM (OTP) ── */}
         {step === "confirm" && <>
           <div className="drawer__head">
             <h2 className="drawer__title">Conferma ordine</h2>
           </div>
           <div className="drawer__body">
             <div className="confirm-screen">
-              <div className="confirm-screen__icon">📱</div>
-              <h3 className="confirm-screen__title">Un ultimo passo!</h3>
+              <div className="confirm-screen__icon">💬</div>
+              <h3 className="confirm-screen__title">Codice di conferma</h3>
               <p className="confirm-screen__text">
-                Il tuo ordine <strong>#{orderId}</strong> è pronto ma deve essere confermato.
-                Clicca il bottone qui sotto per aprire WhatsApp e inviare la conferma.
+                Abbiamo inviato un SMS con un codice a 4 cifre al numero <strong>{phone}</strong>. Inseriscilo qui sotto per confermare l&apos;ordine.
               </p>
-              <div className="confirm-screen__steps">
-                <div className="confirm-step">
-                  <span className="confirm-step__num">1</span>
-                  <span>Clicca &quot;Conferma su WhatsApp&quot;</span>
-                </div>
-                <div className="confirm-step">
-                  <span className="confirm-step__num">2</span>
-                  <span>WhatsApp si apre con il messaggio pronto</span>
-                </div>
-                <div className="confirm-step">
-                  <span className="confirm-step__num">3</span>
-                  <span>Premi Invia — il tuo ordine è confermato!</span>
-                </div>
+
+              <div className="otp-field">
+                <input
+                  type="tel"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  maxLength={4}
+                  placeholder="0000"
+                  value={otp}
+                  onChange={(e) => { setOtp(e.target.value.replace(/\D/g, "").slice(0, 4)); setOtpError(""); }}
+                  onKeyDown={(e) => e.key === "Enter" && confirmOtp()}
+                  autoFocus
+                  className="otp-input"
+                />
               </div>
 
-              <a
-                href={waUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="wa-confirm-btn"
-              >
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                Conferma su WhatsApp
-              </a>
+              {otpError && <p className="otp-error">{otpError}</p>}
 
-              {polling && !confirmed && (
-                <div className="confirm-waiting">
-                  <span className="confirm-waiting__dot" />
-                  In attesa di conferma…
-                </div>
-              )}
+              <button
+                className="btn-primary"
+                onClick={confirmOtp}
+                disabled={confirming || otp.length !== 4}
+                style={{ width: "100%" }}
+              >
+                {confirming ? "Verifica…" : "Conferma ordine"}
+              </button>
 
               <p className="confirm-expire">
                 ⏱ L&apos;ordine scade in 15 minuti se non confermato.
@@ -317,8 +307,8 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
         .gps-btn:hover{border-color:#B03A2E}
         .gps-btn:disabled{opacity:.6;cursor:wait}
         .gps-confirm{font-size:.75rem;color:#2E7D32;margin-top:3px}
-        .wa-notice{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;background:#EBF5EB;border-radius:8px;border-left:3px solid #25D366;font-size:.8rem;color:#1B5E20;line-height:1.5}
-        .wa-notice__icon{color:#25D366;flex-shrink:0;margin-top:1px}
+        .sms-notice{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;background:#EBF0FB;border-radius:8px;border-left:3px solid #3B5BDB;font-size:.8rem;color:#1E3A8A;line-height:1.5}
+        .sms-notice__icon{flex-shrink:0;margin-top:1px}
         .recap{background:#fff;border:1px solid #EDE0CC;border-radius:10px;padding:14px}
         .recap__label{font-size:.72rem;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:#7A7770;margin-bottom:8px}
         .recap__row{display:flex;justify-content:space-between;font-size:.85rem;color:#3A3A36;padding:3px 0}
@@ -328,20 +318,16 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
         .btn-primary:hover:not(:disabled){background:#C9503F;transform:translateY(-1px)}
         .btn-primary:disabled{opacity:.6;cursor:not-allowed}
 
-        /* Confirm screen */
+        /* Confirm / OTP screen */
         .confirm-screen{display:flex;flex-direction:column;align-items:center;gap:16px;text-align:center;padding:8px 0}
         .confirm-screen__icon{font-size:3rem}
         .confirm-screen__title{font-family:Georgia,serif;font-size:1.2rem;font-weight:700;color:#1C1C1A}
         .confirm-screen__text{font-size:.88rem;color:#7A7770;line-height:1.6;max-width:320px}
         .confirm-screen__text strong{color:#1C1C1A}
-        .confirm-screen__steps{display:flex;flex-direction:column;gap:8px;width:100%;background:#fff;border:1px solid #EDE0CC;border-radius:12px;padding:14px}
-        .confirm-step{display:flex;align-items:center;gap:10px;font-size:.85rem;color:#3A3A36;text-align:left}
-        .confirm-step__num{width:24px;height:24px;border-radius:50%;background:#B03A2E;color:#fff;font-size:.72rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
-        .wa-confirm-btn{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;padding:16px;background:#25D366;color:#fff;border-radius:12px;font-size:1rem;font-weight:600;text-decoration:none;transition:background .15s,transform .15s;box-shadow:0 4px 16px rgba(37,211,102,.35)}
-        .wa-confirm-btn:hover{background:#20c25e;transform:translateY(-1px)}
-        .confirm-waiting{display:flex;align-items:center;gap:8px;font-size:.82rem;color:#7A7770}
-        .confirm-waiting__dot{width:8px;height:8px;border-radius:50%;background:#25D366;animation:pulse 1.5s infinite}
-        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+        .otp-field{width:100%;display:flex;justify-content:center}
+        .otp-input{width:160px;padding:18px 12px;border:2px solid #EDE0CC;border-radius:14px;background:#fff;font-size:2rem;font-weight:700;letter-spacing:.5rem;text-align:center;color:#1C1C1A;transition:border-color .15s;font-family:monospace}
+        .otp-input:focus{outline:none;border-color:#B03A2E}
+        .otp-error{font-size:.82rem;color:#B03A2E;text-align:center}
         .confirm-expire{font-size:.75rem;color:#B0ACA5;text-align:center}
 
         /* Done screen */
