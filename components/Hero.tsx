@@ -1,7 +1,9 @@
 "use client";
 import { useEffect, useRef } from "react";
+import type { Business } from "../lib/types";
 
-export default function Hero() {
+export default function Hero({ business }: { business?: Business }) {
+  const displayName = business?.name ?? "La Piazzetta";
   const headlineRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -36,10 +38,10 @@ export default function Hero() {
 
         {/* Main headline */}
         <h1 className="hero__title" ref={headlineRef}>
-          {"La Piazzetta".split(" ").map((word, i) => (
+          {displayName.split(" ").map((word, i) => (
             <span key={i} className="word" style={{ display: "inline-block" }}>
-              {i === 1 ? <em>{word}</em> : word}
-              {i < 1 ? "\u00A0" : ""}
+              {i === displayName.split(" ").length - 1 ? <em>{word}</em> : word}
+              {i < displayName.split(" ").length - 1 ? "\u00A0" : ""}
             </span>
           ))}
         </h1>

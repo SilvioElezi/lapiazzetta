@@ -1,4 +1,7 @@
-export default function Footer() {
+import type { Business } from "../lib/types";
+
+export default function Footer({ business }: { business?: Business }) {
+  const displayName = business?.name ?? "La Piazzetta";
   const year = new Date().getFullYear();
 
   return (
@@ -6,7 +9,7 @@ export default function Footer() {
       <div className="container">
         <div className="footer__inner">
           <div className="footer__brand">
-            <span className="footer__logo">La <em>Piazzetta</em></span>
+            <span className="footer__logo">{displayName}</span>
             <p className="footer__tagline">Pizzeria artigianale · Consegna a domicilio</p>
           </div>
           <nav className="footer__links" aria-label="Footer navigation">
@@ -14,7 +17,7 @@ export default function Footer() {
             <a href="#chi-siamo">Chi siamo</a>
             <a href="#contatti">Contatti</a>
           </nav>
-          <p className="footer__copy">© {year} La Piazzetta. Tutti i diritti riservati.</p>
+          <p className="footer__copy">© {year} {displayName}. Tutti i diritti riservati.</p>
         </div>
       </div>
 

@@ -1,9 +1,8 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
-import { supabase } from "../../lib/supabase";
-import type { Order, MenuCategory, MenuItem, StaffUser, StaffRole, WeekHours, DayHours } from "../../lib/types";
+import { use, useEffect, useState, useCallback } from "react";
+import { supabase } from "../../../lib/supabase";
+import type { Order, MenuCategory, MenuItem, StaffUser, StaffRole, WeekHours, DayHours } from "../../../lib/types";
 
-// ─── HELPERS ──────────────────────────────────────────────
 function elapsed(iso: string) {
   const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
   if (mins < 1) return "adesso";
@@ -18,8 +17,8 @@ const DAY_LABELS: Record<string, string> = {
 };
 const DAY_KEYS = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
 
-// ─── LOGIN ────────────────────────────────────────────────
-function LoginScreen({ onLogin }: { onLogin: (user: StaffUser) => void }) {
+// ─── LOGIN ─────────────────────────────────────────────────
+function LoginScreen({ onLogin, slug }: { onLogin: (user: StaffUser) => void; slug: string }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError]       = useState("");
@@ -29,7 +28,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: StaffUser) => void }) {
     if (!username || !password) return;
     setLoading(true); setError("");
     try {
-      const res = await fetch("/api/auth", {
+      const res = await fetch(`/${slug}/api/auth`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username, password }),
@@ -48,8 +47,8 @@ function LoginScreen({ onLogin }: { onLogin: (user: StaffUser) => void }) {
     <div className="login">
       <div className="login__card">
         <div className="login__logo">🍕</div>
-        <h1 className="login__title">La Piazzetta</h1>
-        <p className="login__sub">Staff Dashboard</p>
+        <h1 className="login__title">Staff Dashboard</h1>
+        <p className="login__sub">Accesso riservato al personale</p>
         <input className="login__input" type="text" placeholder="Username"
           value={username} onChange={(e) => setUsername(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && login()} autoFocus />
@@ -65,33 +64,32 @@ function LoginScreen({ onLogin }: { onLogin: (user: StaffUser) => void }) {
   );
 }
 
-// ─── ORDERS TAB ───────────────────────────────────────────
-function OrdersTab({ role }: { role: StaffRole }) {
+// ─── ORDERS TAB ────────────────────────────────────────────
+function OrdersTab({ role, slug }: { role: StaffRole; slug: string }) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [, setTick] = useState(0);
 
   const fetchOrders = useCallback(async () => {
-    const res = await fetch("/api/orders");
+    const res = await fetch(`/${slug}/api/orders`);
     setOrders(await res.json());
-  }, []);
+  }, [slug]);
 
   useEffect(() => {
     fetchOrders();
     const channel = supabase
-      .channel("orders-rt")
+      .channel(`orders-rt-${slug}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, fetchOrders)
       .subscribe();
     const tick = setInterval(() => setTick((t) => t + 1), 30000);
     return () => { supabase.removeChannel(channel); clearInterval(tick); };
-  }, [fetchOrders]);
+  }, [fetchOrders, slug]);
 
-  const markReady     = async (id: string) => { await fetch(`/api/order/${id}`, { method: "PATCH" }); };
-  const markDelivered = async (id: string) => { await fetch(`/api/order/${id}`, { method: "DELETE" }); };
+  const markReady     = async (id: string) => { await fetch(`/${slug}/api/order/${id}`, { method: "PATCH" }); };
+  const markDelivered = async (id: string) => { await fetch(`/${slug}/api/order/${id}`, { method: "DELETE" }); };
 
-  // Filter by role
   const visible = orders.filter((o) => {
-    if (role === "delivery")  return o.status === "ready";
-    return true; // reception + admin see all
+    if (role === "delivery") return o.status === "ready";
+    return true;
   });
 
   const newOrders   = orders.filter((o) => o.status === "new");
@@ -144,19 +142,16 @@ function OrdersTab({ role }: { role: StaffRole }) {
                 <span className="order-total__amt">€{order.total.toFixed(2)}</span>
               </div>
               <div className="order-actions">
-                {/* Reception + admin can mark ready */}
                 {order.status === "new" && role !== "delivery" && (
                   <button className="action-btn action-btn--ready" onClick={() => markReady(order.id)}>
                     ✅ Ordine pronto
                   </button>
                 )}
-                {/* Delivery + admin can mark delivered */}
                 {order.status === "ready" && role !== "reception" && (
                   <button className="action-btn action-btn--delivered" onClick={() => markDelivered(order.id)}>
                     🛵 Consegnato
                   </button>
                 )}
-                {/* Admin sees both buttons always */}
                 {order.status === "ready" && role === "admin" && (
                   <button className="action-btn action-btn--ready" onClick={() => markReady(order.id)}
                     style={{background:"#888"}}>
@@ -172,23 +167,23 @@ function OrdersTab({ role }: { role: StaffRole }) {
   );
 }
 
-// ─── SETTINGS TAB (admin only) ────────────────────────────
-function SettingsTab() {
+// ─── SETTINGS TAB ──────────────────────────────────────────
+function SettingsTab({ slug }: { slug: string }) {
   const [onlineOrders, setOnlineOrders] = useState(true);
   const [hours, setHours] = useState<WeekHours | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved]   = useState(false);
 
   useEffect(() => {
-    fetch("/api/settings").then((r) => r.json()).then((data) => {
+    fetch(`/${slug}/api/settings`).then((r) => r.json()).then((data) => {
       setOnlineOrders(data.online_orders ?? true);
       setHours(data.hours ?? null);
     });
-  }, []);
+  }, [slug]);
 
-  const saveSetting = async (key: string, value: any) => {
+  const saveSetting = async (key: string, value: unknown) => {
     setSaving(true);
-    await fetch("/api/settings", {
+    await fetch(`/${slug}/api/settings`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ key, value }),
@@ -203,7 +198,7 @@ function SettingsTab() {
     await saveSetting("online_orders", next);
   };
 
-  const updateDay = (day: string, field: keyof DayHours, val: any) => {
+  const updateDay = (day: string, field: keyof DayHours, val: unknown) => {
     if (!hours) return;
     const updated = { ...hours, [day]: { ...hours[day as keyof WeekHours], [field]: val } };
     setHours(updated);
@@ -213,8 +208,6 @@ function SettingsTab() {
 
   return (
     <div className="tab-content">
-
-      {/* Online orders toggle */}
       <div className="settings-card">
         <div className="settings-card__head">
           <div>
@@ -236,7 +229,6 @@ function SettingsTab() {
         )}
       </div>
 
-      {/* Opening hours */}
       <div className="settings-card">
         <div className="settings-card__head">
           <div>
@@ -284,8 +276,8 @@ function SettingsTab() {
   );
 }
 
-// ─── MENU TAB (admin only) ────────────────────────────────
-function MenuTab() {
+// ─── MENU TAB ──────────────────────────────────────────────
+function MenuTab({ slug }: { slug: string }) {
   const [menu, setMenu]         = useState<MenuCategory[]>([]);
   const [saving, setSaving]     = useState(false);
   const [saved, setSaved]       = useState(false);
@@ -295,11 +287,13 @@ function MenuTab() {
   const [newCatName, setNewCatName] = useState("");
   const [newCatEmoji, setNewCatEmoji] = useState("🍕");
 
-  useEffect(() => { fetch("/api/menu").then((r) => r.json()).then(setMenu).catch(() => {}); }, []);
+  useEffect(() => {
+    fetch(`/${slug}/api/menu`).then((r) => r.json()).then(setMenu).catch(() => {});
+  }, [slug]);
 
   const saveCategory = async (cat: MenuCategory) => {
     setSaving(true);
-    await fetch("/api/menu", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify([cat]) });
+    await fetch(`/${slug}/api/menu`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify([cat]) });
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
 
@@ -315,7 +309,7 @@ function MenuTab() {
   const deleteCategory = async (ci: number) => {
     if (!confirm(`Eliminare "${menu[ci].category}"?`)) return;
     const cat = menu[ci];
-    if (cat.id) await fetch("/api/menu", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: cat.id }) });
+    if (cat.id) await fetch(`/${slug}/api/menu`, { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id: cat.id }) });
     setMenu(menu.filter((_, c) => c !== ci));
   };
   const openEdit = (ci: number, ii: number | null) => {
@@ -336,8 +330,8 @@ function MenuTab() {
     const newCat: MenuCategory = { category: newCatName.trim(), emoji: newCatEmoji, sort_order: menu.length, items: [] };
     const updated = [...menu, newCat];
     setMenu(updated);
-    fetch("/api/menu", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify([newCat]) })
-      .then(() => fetch("/api/menu").then((r) => r.json()).then(setMenu));
+    fetch(`/${slug}/api/menu`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify([newCat]) })
+      .then(() => fetch(`/${slug}/api/menu`).then((r) => r.json()).then(setMenu));
     setNewCatName(""); setNewCatEmoji("🍕"); setShowNewCat(false);
   };
 
@@ -426,8 +420,10 @@ function MenuTab() {
   );
 }
 
-// ─── ROOT PAGE ─────────────────────────────────────────────
-export default function ShopPage() {
+// ─── ROOT PAGE ──────────────────────────────────────────────
+export default function ShopPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = use(params);
+
   const [user, setUser] = useState<StaffUser | null>(() => {
     if (typeof window === "undefined") return null;
     try { return JSON.parse(localStorage.getItem("shop_user") ?? "null"); } catch { return null; }
@@ -439,7 +435,7 @@ export default function ShopPage() {
 
   if (!user) return (
     <>
-      <LoginScreen onLogin={handleLogin} />
+      <LoginScreen onLogin={handleLogin} slug={slug} />
       <style>{styles}</style>
     </>
   );
@@ -455,7 +451,7 @@ export default function ShopPage() {
       <header className="shop__header">
         <div className="shop__header-inner">
           <div className="shop__logo-wrap">
-            <span className="shop__logo">🍕 La Piazzetta</span>
+            <span className="shop__logo">🍕 Dashboard</span>
             <span className="role-badge">{roleBadge[user.role]}</span>
           </div>
           <nav className="shop__tabs">
@@ -471,9 +467,9 @@ export default function ShopPage() {
         </div>
       </header>
       <main className="shop__main">
-        {tab === "orders"   && <OrdersTab role={user.role} />}
-        {tab === "menu"     && user.role === "admin" && <MenuTab />}
-        {tab === "settings" && user.role === "admin" && <SettingsTab />}
+        {tab === "orders"   && <OrdersTab role={user.role} slug={slug} />}
+        {tab === "menu"     && user.role === "admin" && <MenuTab slug={slug} />}
+        {tab === "settings" && user.role === "admin" && <SettingsTab slug={slug} />}
       </main>
       <style>{styles}</style>
     </div>
@@ -483,8 +479,6 @@ export default function ShopPage() {
 const styles = `
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'DM Sans',sans-serif;background:#F5EADA;min-height:100vh}
-
-/* Login */
 .login{min-height:100vh;display:flex;align-items:center;justify-content:center;background:#1C1C1A;padding:24px}
 .login__card{background:#FDF6EC;border-radius:20px;padding:40px 32px;width:100%;max-width:360px;display:flex;flex-direction:column;gap:14px;box-shadow:0 20px 60px rgba(0,0,0,.4);align-items:center}
 .login__logo{font-size:2.5rem}
@@ -496,8 +490,6 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA;min-height:100vh}
 .login__btn:hover:not(:disabled){background:#C9503F}
 .login__btn:disabled{opacity:.6;cursor:wait}
 .login__err{font-size:.8rem;color:#B03A2E;text-align:center}
-
-/* Shell */
 .shop__header{background:#1C1C1A;position:sticky;top:0;z-index:10;box-shadow:0 2px 12px rgba(0,0,0,.2)}
 .shop__header-inner{max-width:1200px;margin:0 auto;padding:0 20px;display:flex;align-items:center;gap:12px;min-height:56px;flex-wrap:wrap}
 .shop__logo-wrap{display:flex;align-items:center;gap:10px;flex:1;min-width:0}
@@ -511,8 +503,6 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA;min-height:100vh}
 .shop__tab--logout:hover{background:rgba(255,100,80,.12);color:#ff6450}
 .shop__main{max-width:1200px;margin:0 auto;padding:20px}
 .tab-content{display:flex;flex-direction:column;gap:16px}
-
-/* Orders */
 .orders-stats{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .stat-pill{font-size:.75rem;font-weight:500;padding:5px 12px;border-radius:999px}
 .stat-pill--new{background:#FEF3DB;color:#8A5E12}
@@ -546,8 +536,6 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA;min-height:100vh}
 .action-btn:hover{opacity:.88;transform:translateY(-1px)}
 .action-btn--ready{background:#4CAF50;color:#fff}
 .action-btn--delivered{background:#1C1C1A;color:#FDF6EC}
-
-/* Settings */
 .settings-card{background:#fff;border:1px solid #EDE0CC;border-radius:14px;overflow:hidden}
 .settings-card__head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;gap:12px;flex-wrap:wrap}
 .settings-card__title{font-family:Georgia,serif;font-size:1rem;font-weight:700;color:#1C1C1A;margin-bottom:3px}
@@ -571,8 +559,6 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA;min-height:100vh}
 .hours-closed{font-size:.8rem;font-weight:500;color:#B03A2E;text-transform:uppercase;letter-spacing:.06em}
 .saved-badge{font-size:.78rem;font-weight:500;color:#2E7D32;background:#EBF5EB;padding:4px 10px;border-radius:999px}
 .saving-badge{font-size:.78rem;color:#7A7770}
-
-/* Menu */
 .menu-toolbar{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;background:#fff;border:1px solid #EDE0CC;border-radius:12px;flex-wrap:wrap;gap:8px}
 .menu-toolbar__title{font-size:.85rem;color:#7A7770}
 .btn-add-cat{padding:8px 14px;background:#1C1C1A;color:#FDF6EC;border:none;border-radius:8px;font-size:.82rem;font-weight:500;cursor:pointer}
@@ -597,29 +583,27 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA;min-height:100vh}
 .menu-item-row--inactive{opacity:.5}
 .menu-item-row__main{display:flex;align-items:center;gap:8px}
 .menu-item-row__name{font-size:.9rem;font-weight:500;color:#1C1C1A;flex:1}
-.menu-item-row__price{font-size:.9rem;font-weight:600;color:#B03A2E;white-space:nowrap}
 .menu-item-row__flags{display:flex;gap:4px}
-.menu-item-row__ing{font-size:.78rem;color:#7A7770;line-height:1.4}
-.menu-item-row__actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px}
 .flag{font-size:.75rem}
-.flag--off{background:#FDECEA;color:#B71C1C;font-size:.65rem;font-weight:600;padding:1px 6px;border-radius:4px}
-.empty-cat{padding:12px 16px;font-size:.82rem;color:#B0ACA5;font-style:italic}
-.modal-backdrop{position:fixed;inset:0;z-index:300;background:rgba(28,28,26,.5);backdrop-filter:blur(2px)}
-.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:301;background:#fff;border-radius:16px;width:calc(100% - 40px);max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 60px rgba(28,28,26,.25)}
-.modal__head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #EDE0CC;position:sticky;top:0;background:#fff}
-.modal__head h3{font-family:Georgia,serif;font-size:1.05rem;font-weight:700;color:#1C1C1A}
-.modal__head button{background:none;border:none;font-size:1.1rem;cursor:pointer;color:#7A7770}
-.modal__body{padding:20px;display:flex;flex-direction:column;gap:14px}
-.modal__foot{padding:16px 20px;border-top:1px solid #EDE0CC;display:flex;gap:8px;justify-content:flex-end;position:sticky;bottom:0;background:#fff}
-.modal-field{display:flex;flex-direction:column;gap:5px}
-.modal-field>span{font-size:.72rem;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:#7A7770}
-.modal-field input,.modal-field textarea{padding:10px 12px;border:1.5px solid #EDE0CC;border-radius:8px;font-size:.9rem;font-family:inherit;resize:vertical;transition:border-color .15s}
+.flag--off{font-size:.65rem;font-weight:700;background:#FDECEA;color:#B71C1C;padding:2px 5px;border-radius:4px}
+.menu-item-row__price{font-size:.88rem;font-weight:500;color:#1C1C1A;white-space:nowrap}
+.menu-item-row__ing{font-size:.78rem;color:#7A7770;line-height:1.3}
+.menu-item-row__actions{display:flex;gap:6px;flex-wrap:wrap}
+.empty-cat{font-size:.8rem;color:#B0ACA5;padding:12px 16px;font-style:italic}
+.modal-backdrop{position:fixed;inset:0;z-index:200;background:rgba(28,28,26,.5);backdrop-filter:blur(2px)}
+.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:201;background:#fff;border-radius:16px;padding:0;width:90%;max-width:440px;box-shadow:0 20px 60px rgba(0,0,0,.2);max-height:90vh;overflow-y:auto}
+.modal__head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid #EDE0CC}
+.modal__head h3{font-family:Georgia,serif;font-size:1rem;font-weight:700;color:#1C1C1A}
+.modal__head button{background:rgba(28,28,26,.08);border:none;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:.85rem;display:flex;align-items:center;justify-content:center}
+.modal__body{padding:16px 20px;display:flex;flex-direction:column;gap:12px}
+.modal-field{display:flex;flex-direction:column;gap:4px;font-size:.82rem;font-weight:500;color:#7A7770}
+.modal-field input,.modal-field textarea{padding:9px 12px;border:1.5px solid #EDE0CC;border-radius:8px;font-size:.9rem;font-family:inherit;resize:vertical}
 .modal-field input:focus,.modal-field textarea:focus{outline:none;border-color:#B03A2E}
-.modal-flags{display:flex;flex-wrap:wrap;gap:10px}
-.flag-toggle{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:.85rem;color:#3A3A36;user-select:none}
-.flag-toggle input{width:16px;height:16px;cursor:pointer;accent-color:#B03A2E}
-.btn-cancel-modal{padding:10px 18px;background:transparent;border:1px solid #EDE0CC;border-radius:8px;font-size:.88rem;cursor:pointer;color:#7A7770}
-.btn-save-modal{padding:10px 20px;background:#B03A2E;color:#fff;border:none;border-radius:8px;font-size:.88rem;font-weight:500;cursor:pointer}
-.btn-save-modal:hover:not(:disabled){background:#C9503F}
+.modal-flags{display:flex;flex-wrap:wrap;gap:8px}
+.flag-toggle{display:flex;align-items:center;gap:6px;font-size:.82rem;color:#3A3A36;cursor:pointer}
+.flag-toggle input{width:15px;height:15px;accent-color:#B03A2E}
+.modal__foot{display:flex;gap:8px;padding:14px 20px;border-top:1px solid #EDE0CC;justify-content:flex-end}
+.btn-cancel-modal{padding:9px 18px;background:transparent;color:#7A7770;border:1px solid #EDE0CC;border-radius:8px;font-size:.85rem;cursor:pointer}
+.btn-save-modal{padding:9px 18px;background:#B03A2E;color:#fff;border:none;border-radius:8px;font-size:.85rem;font-weight:500;cursor:pointer}
 .btn-save-modal:disabled{opacity:.5;cursor:not-allowed}
 `;

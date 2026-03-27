@@ -87,16 +87,17 @@ function ItemPill({ item }: { item: MenuItem }) {
   );
 }
 
-export default function MenuGrid() {
+export default function MenuGrid({ slug }: { slug?: string }) {
   const [menu, setMenu] = useState<MenuCategory[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/menu")
+    const url = slug ? `/${slug}/api/menu` : "/api/menu";
+    fetch(url)
       .then((r) => r.json())
       .then((data) => { setMenu(data); setLoading(false); })
       .catch(() => setLoading(false));
-  }, []);
+  }, [slug]);
 
   if (loading) return (
     <section className="menu-grid" id="menu">

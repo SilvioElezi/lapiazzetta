@@ -67,3 +67,16 @@ export type Settings = {
   online_orders: boolean;
   hours: WeekHours;
 };
+
+export type Business = {
+  id: string;
+  slug: string;
+  name: string;
+  logo_url?: string;
+  phone?: string;
+  wa_phone?: string;
+  address?: string;
+  lat?: number;
+  lng?: number;
+  radius_km: number;
+};

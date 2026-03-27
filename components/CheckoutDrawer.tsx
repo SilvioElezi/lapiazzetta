@@ -1,10 +1,12 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useCart } from "./CartContext";
+import type { Business } from "../lib/types";
 
 type Step = "cart" | "form" | "confirm" | "done";
 
-export default function CheckoutDrawer() {
+export default function CheckoutDrawer({ business }: { business?: Business }) {
+  const slug = business?.slug;
   const { cart, increase, decrease, remove, total } = useCart();
   const [open,    setOpen]    = useState(false);
   const [step,    setStep]    = useState<Step>("cart");
@@ -29,18 +31,20 @@ export default function CheckoutDrawer() {
   const itemCount = cart.reduce((s: number, i: any) => s + i.qty, 0);
 
   useEffect(() => {
-    fetch("/api/settings")
+    const url = slug ? `/${slug}/api/settings` : "/api/settings";
+    fetch(url)
       .then((r) => r.json())
       .then((d) => setOnlineOrders(d.online_orders ?? true))
       .catch(() => {});
-  }, []);
+  }, [slug]);
 
   // Poll to check if order was confirmed
   useEffect(() => {
     if (!polling || !orderId) return;
     const interval = setInterval(async () => {
       try {
-        const res = await fetch(`/api/order-status?id=${orderId}`);
+        const statusUrl = slug ? `/${slug}/api/order-status?id=${orderId}` : `/api/order-status?id=${orderId}`;
+        const res = await fetch(statusUrl);
         const data = await res.json();
         if (data.status === "new") {
           setConfirmed(true);
@@ -74,7 +78,8 @@ export default function CheckoutDrawer() {
     if (!clientName.trim() || !phone.trim() || !address.trim()) return;
     setPlacing(true);
     try {
-      const res = await fetch("/api/order", {
+      const orderUrl = slug ? `/${slug}/api/order` : "/api/order";
+      const res = await fetch(orderUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

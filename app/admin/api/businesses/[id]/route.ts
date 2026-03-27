@@ -1,0 +1,29 @@
+import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const body = await req.json();
+
+  const { data, error } = await supabaseAdmin
+    .from("businesses")
+    .update({
+      name:      body.name,
+      phone:     body.phone ?? null,
+      wa_phone:  body.wa_phone ?? null,
+      address:   body.address ?? null,
+      lat:       body.lat ?? null,
+      lng:       body.lng ?? null,
+      radius_km: body.radius_km ?? 5,
+      logo_url:  body.logo_url ?? null,
+    })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json(data);
+}

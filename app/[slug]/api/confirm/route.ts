@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "../../../lib/supabase-admin";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
-export async function GET(req: NextRequest) {
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  const { slug } = await params;
   const token = req.nextUrl.searchParams.get("token");
   const id    = req.nextUrl.searchParams.get("id");
 
@@ -11,11 +15,23 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Find the order
+  const { data: business } = await supabaseAdmin
+    .from("businesses")
+    .select("id, name")
+    .eq("slug", slug)
+    .single();
+
+  if (!business) {
+    return new NextResponse(html("Errore", "Attività non trovata.", false), {
+      headers: { "Content-Type": "text/html" },
+    });
+  }
+
   const { data: order, error } = await supabaseAdmin
     .from("orders")
     .select("id, status, confirm_code, client_name")
     .eq("id", id)
+    .eq("business_id", business.id)
     .single();
 
   if (error || !order) {
@@ -39,11 +55,11 @@ export async function GET(req: NextRequest) {
     );
   }
 
-  // ✅ Confirm the order
   const { error: updateError } = await supabaseAdmin
     .from("orders")
     .update({ status: "new", confirm_code: null })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("business_id", business.id);
 
   if (updateError) {
     return new NextResponse(
@@ -56,23 +72,23 @@ export async function GET(req: NextRequest) {
     html(
       "Ordine confermato! 🍕",
       `Ciao ${order.client_name}! Il tuo ordine è confermato ed è in preparazione. Puoi chiudere questa pagina.`,
-      true
+      true,
+      business.name
     ),
     { headers: { "Content-Type": "text/html" } }
   );
 }
 
-// Simple mobile-friendly HTML response page
-function html(title: string, message: string, success: boolean): string {
-  const color  = success ? "#4CAF50" : "#B03A2E";
-  const icon   = success ? "✅" : "❌";
-  const bg     = success ? "#F1F8F1" : "#FFF5F5";
+function html(title: string, message: string, success: boolean, brandName = "La Piazzetta"): string {
+  const color = success ? "#4CAF50" : "#B03A2E";
+  const icon  = success ? "✅" : "❌";
+  const bg    = success ? "#F1F8F1" : "#FFF5F5";
   return `<!DOCTYPE html>
 <html lang="it">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1"/>
-  <title>${title} — La Piazzetta</title>
+  <title>${title} — ${brandName}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
@@ -92,7 +108,7 @@ function html(title: string, message: string, success: boolean): string {
     <div class="icon">${icon}</div>
     <h1>${title}</h1>
     <p>${message}</p>
-    <p class="brand">🍕 <strong>La Piazzetta</strong> — Pizzeria artigianale</p>
+    <p class="brand">🍕 <strong>${brandName}</strong></p>
   </div>
 </body>
 </html>`;
