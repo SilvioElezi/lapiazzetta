@@ -202,9 +202,10 @@ function SettingsTab({ slug }: { slug: string }) {
   };
 
   const updateDay = (day: string, field: keyof DayHours, val: unknown) => {
-    if (!hours) return;
-    const updated = { ...hours, [day]: { ...hours[day as keyof WeekHours], [field]: val } };
-    setHours(updated);
+    setHours((prev) => {
+      if (!prev) return prev;
+      return { ...prev, [day]: { ...prev[day as keyof WeekHours], [field]: val } };
+    });
   };
 
   const saveHours = () => saveSetting("hours", hours);
@@ -497,10 +498,14 @@ function MenuTab({ slug }: { slug: string }) {
 export default function ShopPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug: urlSlug } = use(params);
 
-  const [user, setUser] = useState<StaffUser | null>(() => {
-    if (typeof window === "undefined") return null;
-    try { return JSON.parse(localStorage.getItem("shop_user") ?? "null"); } catch { return null; }
-  });
+  const [user, setUser] = useState<StaffUser | null>(null);
+
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("shop_user");
+      if (stored) setUser(JSON.parse(stored));
+    } catch {}
+  }, []);
   const [tab, setTab] = useState<"orders" | "menu" | "settings">("orders");
   const [activeSlug, setActiveSlug] = useState(urlSlug);
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(null);
