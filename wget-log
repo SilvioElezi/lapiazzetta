@@ -1,6 +1,0 @@
---2026-03-23 22:11:00--  https://claude.ai/api/organizations/ae5e48b8-8340-42a9-823b-27289946d2bf/conversations/6a59d5e4-787f-4f24-bd1d-87b771acd042/wiggle/download-files?paths=%2Fmnt%2Fuser-data%2Foutputs%2Fapi%2Fstore.ts
-Resolving claude.ai (claude.ai)... 160.79.104.10, 2607:6bc0::10
-Connecting to claude.ai (claude.ai)|160.79.104.10|:443... connected.
-HTTP request sent, awaiting response... 403 Forbidden
-2026-03-23 22:11:00 ERROR 403: Forbidden.
-
