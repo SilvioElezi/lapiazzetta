@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import MenuDemo from "../components/MenuDemo";
 
 export const metadata: Metadata = {
   title: "8bit.al — Piattaforma ordini online per pizzerie e ristoranti",
@@ -194,6 +195,9 @@ export default function LandingPage() {
           </div>
         </div>
       </div>
+
+      {/* ── MENU DEMO ── */}
+      <MenuDemo />
 
       {/* ── MULTI-TENANT ── */}
       <div className="tenants">
