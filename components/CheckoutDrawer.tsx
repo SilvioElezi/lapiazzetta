@@ -2,9 +2,55 @@
 import { useState, useEffect } from "react";
 import { useCart } from "./CartContext";
 import { haversineKm } from "../lib/haversine";
-import type { Business } from "../lib/types";
+import type { Business, WeekHours, DayHours } from "../lib/types";
 
 type Step = "cart" | "form" | "confirm" | "done";
+
+const DAY_KEYS_SUN = ["sunday","monday","tuesday","wednesday","thursday","friday","saturday"];
+const DAY_LABELS_SHORT: Record<string, string> = {
+  monday:"Lun", tuesday:"Mar", wednesday:"Mer",
+  thursday:"Gio", friday:"Ven", saturday:"Sab", sunday:"Dom",
+};
+
+function fmtShift(d: DayHours) {
+  const s1 = `${d.from}–${d.to}`;
+  return d.from2 && d.to2 ? `${s1} · ${d.from2}–${d.to2}` : s1;
+}
+
+function isInShift(now: string, from: string, to: string) {
+  return now >= from && now <= to;
+}
+
+function isOpenNow(hours: WeekHours | null): boolean {
+  if (!hours) return true;
+  const today = hours[DAY_KEYS_SUN[new Date().getDay()] as keyof WeekHours];
+  if (!today?.open) return false;
+  const now = new Date();
+  const t = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+  if (isInShift(t, today.from, today.to)) return true;
+  if (today.from2 && today.to2 && isInShift(t, today.from2, today.to2)) return true;
+  return false;
+}
+
+function hoursMessage(hours: WeekHours | null): string {
+  if (!hours) return "";
+  const todayIdx = new Date().getDay();
+  const todayKey = DAY_KEYS_SUN[todayIdx];
+  const today = hours[todayKey as keyof WeekHours];
+
+  if (today?.open) {
+    return `Oggi: ${fmtShift(today)}`;
+  }
+  // Find next open day (wrap around the week)
+  for (let i = 1; i <= 7; i++) {
+    const key = DAY_KEYS_SUN[(todayIdx + i) % 7];
+    const day = hours[key as keyof WeekHours];
+    if (day?.open) {
+      return `Oggi siamo chiusi. Prossima apertura: ${DAY_LABELS_SHORT[key]} ${fmtShift(day)}`;
+    }
+  }
+  return "Siamo temporaneamente chiusi.";
+}
 
 export default function CheckoutDrawer({ business }: { business?: Business }) {
   const slug = business?.slug;
@@ -14,6 +60,7 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
   const [locating,     setLocating]    = useState(false);
   const [onlineOrders, setOnlineOrders] = useState(true);
   const [deliveryFee,  setDeliveryFee] = useState(0);
+  const [hours,        setHours]       = useState<WeekHours | null>(null);
 
   // Form fields
   const [clientName, setClientName] = useState("");
@@ -36,6 +83,8 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
   const [geocoding,    setGeocoding]    = useState(false);
 
   const itemCount = cart.reduce((s: number, i: any) => s + i.qty, 0);
+  const openNow   = isOpenNow(hours);
+  const canOrder  = onlineOrders && openNow;
 
   useEffect(() => {
     const url = slug ? `/${slug}/api/settings` : "/api/settings";
@@ -44,6 +93,7 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
       .then((d) => {
         setOnlineOrders(d.online_orders ?? true);
         setDeliveryFee(d.delivery_fee ? parseFloat(d.delivery_fee) || 0 : 0);
+        if (d.hours) setHours(d.hours);
       })
       .catch(() => {});
   }, [slug]);
@@ -212,7 +262,12 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
                 <div className="total-row"><span>Consegna</span><span>€{deliveryFee.toFixed(2)}</span></div>
               )}
               <div className="total-row"><span>Totale</span><span className="total-amt">€{(total + deliveryFee).toFixed(2)}</span></div>
-              <button className="btn-primary" onClick={() => setStep("form")}>Procedi all&apos;ordine →</button>
+              {!onlineOrders
+                ? <div className="orders-closed">🔴 Siamo operativi ma gli ordini online sono temporaneamente sospesi. Torniamo presto!</div>
+                : !openNow
+                  ? <div className="orders-closed">🕐 Al momento siamo chiusi. {hoursMessage(hours)}</div>
+                  : <button className="btn-primary" onClick={() => setStep("form")}>Procedi all&apos;ordine →</button>
+              }
             </div>
           )}
         </>}
@@ -263,11 +318,13 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
           <div className="drawer__foot">
             {addressError && <div className="addr-error">🚫 {addressError}</div>}
             {!onlineOrders
-              ? <div className="orders-closed">🔴 Ordini online sospesi. Chiamaci al {business?.phone ?? "+39 030 886 0293"}</div>
-              : <button className="btn-primary" onClick={placeOrder}
-                  disabled={placing || geocoding || !clientName || !phone || !address}>
-                  {geocoding ? "Verifica indirizzo…" : placing ? "Invio in corso…" : "Continua →"}
-                </button>
+              ? <div className="orders-closed">🔴 Siamo operativi ma gli ordini online sono temporaneamente sospesi. Torniamo presto!</div>
+              : !openNow
+                ? <div className="orders-closed">🕐 Al momento siamo chiusi. {hoursMessage(hours)}</div>
+                : <button className="btn-primary" onClick={placeOrder}
+                    disabled={placing || geocoding || !clientName || !phone || !address}>
+                    {geocoding ? "Verifica indirizzo…" : placing ? "Invio in corso…" : "Continua →"}
+                  </button>
             }
           </div>
         </>}
