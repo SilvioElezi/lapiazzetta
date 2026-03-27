@@ -273,9 +273,6 @@ export default function AdminPage() {
                   <button onClick={() => setForm((f) => ({ ...f, logo_url: "" }))} style={s.btnGhost}>Rimuovi</button>
                 )}
               </div>
-              {form.logo_url && (
-                <Field label="Logo URL" value={form.logo_url} onChange={(v) => setForm((f) => ({ ...f, logo_url: v }))} style={{ marginTop: 8 }} />
-              )}
             </div>
 
             <div style={{display:"flex",gap:8,marginTop:16}}>

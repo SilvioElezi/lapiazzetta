@@ -27,6 +27,7 @@ export type MenuItem = {
   spicy: boolean;
   vegetarian: boolean;
   description?: string;
+  image_url?: string;
   active: boolean;
 };
 
@@ -52,6 +53,8 @@ export type DayHours = {
   open: boolean;
   from: string;
   to: string;
+  from2?: string;
+  to2?: string;
 };
 
 export type WeekHours = {

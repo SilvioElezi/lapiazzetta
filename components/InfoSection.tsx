@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import type { Business } from "../lib/types";
 
-type DayHours = { open: boolean; from: string; to: string };
+type DayHours = { open: boolean; from: string; to: string; from2?: string; to2?: string };
 type WeekHours = Record<string, DayHours>;
 
 const DAY_LABELS: Record<string, string> = {
@@ -12,13 +12,13 @@ const DAY_LABELS: Record<string, string> = {
 const DAY_KEYS = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
 
 const DEFAULT_HOURS: WeekHours = {
-  monday:    { open: false, from: "18:00", to: "23:00" },
-  tuesday:   { open: true,  from: "18:00", to: "23:00" },
-  wednesday: { open: true,  from: "18:00", to: "23:00" },
-  thursday:  { open: true,  from: "18:00", to: "23:00" },
-  friday:    { open: true,  from: "18:00", to: "23:30" },
-  saturday:  { open: true,  from: "12:00", to: "23:30" },
-  sunday:    { open: true,  from: "12:00", to: "23:00" },
+  monday:    { open: false, from: "11:45", to: "14:00", from2: "18:00", to2: "22:00" },
+  tuesday:   { open: true,  from: "11:45", to: "14:00", from2: "18:00", to2: "22:00" },
+  wednesday: { open: true,  from: "11:45", to: "14:00", from2: "18:00", to2: "22:00" },
+  thursday:  { open: true,  from: "11:45", to: "14:00", from2: "18:00", to2: "22:00" },
+  friday:    { open: true,  from: "11:45", to: "14:00", from2: "18:00", to2: "22:00" },
+  saturday:  { open: true,  from: "11:45", to: "14:00", from2: "18:00", to2: "22:00" },
+  sunday:    { open: true,  from: "11:45", to: "14:00", from2: "18:00", to2: "22:00" },
 };
 
 export default function InfoSection({ business }: { business?: Business }) {
@@ -63,7 +63,11 @@ export default function InfoSection({ business }: { business?: Business }) {
                       {DAY_LABELS[day]}
                     </span>
                     <span className="hours-time">
-                      {d.open ? `${d.from} – ${d.to}` : <span className="closed-label">Chiuso</span>}
+                      {d.open
+                        ? d.from2
+                          ? `${d.from} – ${d.to} · ${d.from2} – ${d.to2}`
+                          : `${d.from} – ${d.to}`
+                        : <span className="closed-label">Chiuso</span>}
                     </span>
                   </div>
                 );

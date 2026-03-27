@@ -1,10 +1,11 @@
 "use client";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Business } from "../lib/types";
 
 export default function Hero({ business }: { business?: Business }) {
   const displayName = business?.name ?? "La Piazzetta";
   const headlineRef = useRef<HTMLHeadingElement>(null);
+  const [deliveryFee, setDeliveryFee] = useState<number | null>(null);
 
   useEffect(() => {
     // Staggered entrance animation
@@ -15,6 +16,17 @@ export default function Hero({ business }: { business?: Business }) {
       w.style.animationDelay = `${i * 120}ms`;
     });
   }, []);
+
+  useEffect(() => {
+    const slug = business?.slug;
+    if (!slug) return;
+    fetch(`/${slug}/api/settings`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.delivery_fee != null) setDeliveryFee(parseFloat(data.delivery_fee) || 0);
+      })
+      .catch(() => {});
+  }, [business?.slug]);
 
   const scrollToMenu = () => {
     document.getElementById("menu")?.scrollIntoView({ behavior: "smooth" });
@@ -30,6 +42,15 @@ export default function Hero({ business }: { business?: Business }) {
       </div>
 
       <div className="hero__inner container">
+        {/* Logo */}
+        {business?.logo_url && (
+          <img
+            src={business.logo_url}
+            alt={displayName}
+            style={{ width: 50, height: 50, objectFit: "contain", borderRadius: "50%", marginBottom: 16, display: "block" }}
+          />
+        )}
+
         {/* Eyebrow */}
         <p className="hero__eyebrow">
           <span className="hero__eyebrow-dot" />
@@ -65,8 +86,11 @@ export default function Hero({ business }: { business?: Business }) {
 
         {/* Info pills */}
         <div className="hero__pills">
-          <span className="pill">🕐 Lun–Dom 18:00–23:00</span>
-          <span className="pill">🛵 Consegna da €1,50</span>
+          {deliveryFee !== null && (
+            <span className="pill">
+              {deliveryFee === 0 ? "🛵 Consegna gratuita" : `🛵 Consegna €${deliveryFee.toFixed(2)}`}
+            </span>
+          )}
           <span className="pill">⏱ Pronto in 30 min</span>
         </div>
       </div>

@@ -278,14 +278,34 @@ function SettingsTab({ slug }: { slug: string }) {
                     <span className="hours-day-name">{DAY_LABELS[day]}</span>
                   </label>
                   {d.open ? (
-                    <div className="hours-times">
-                      <input type="time" value={d.from}
-                        onChange={(e) => updateDay(day, "from", e.target.value)}
-                        className="time-input" />
-                      <span className="hours-sep">–</span>
-                      <input type="time" value={d.to}
-                        onChange={(e) => updateDay(day, "to", e.target.value)}
-                        className="time-input" />
+                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                      <div className="hours-times">
+                        <input type="time" value={d.from}
+                          onChange={(e) => updateDay(day, "from", e.target.value)}
+                          className="time-input" />
+                        <span className="hours-sep">–</span>
+                        <input type="time" value={d.to}
+                          onChange={(e) => updateDay(day, "to", e.target.value)}
+                          className="time-input" />
+                      </div>
+                      {d.from2 != null && d.from2 !== "" ? (
+                        <div className="hours-times">
+                          <input type="time" value={d.from2 ?? ""}
+                            onChange={(e) => updateDay(day, "from2", e.target.value)}
+                            className="time-input" />
+                          <span className="hours-sep">–</span>
+                          <input type="time" value={d.to2 ?? ""}
+                            onChange={(e) => updateDay(day, "to2", e.target.value)}
+                            className="time-input" />
+                          <button type="button" onClick={() => updateDay(day, "from2", "")}
+                            style={{background:"transparent",border:"none",cursor:"pointer",color:"#B03A2E",fontSize:".8rem",padding:"0 4px"}}>✕</button>
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => { updateDay(day, "from2", "12:00"); updateDay(day, "to2", "14:30"); }}
+                          style={{background:"transparent",border:"1px dashed #EDE0CC",borderRadius:6,cursor:"pointer",color:"#7A7770",fontSize:".75rem",padding:"3px 8px",textAlign:"left",width:"fit-content"}}>
+                          + Secondo turno
+                        </button>
+                      )}
                     </div>
                   ) : (
                     <span className="hours-closed">Chiuso</span>
@@ -306,10 +326,23 @@ function MenuTab({ slug }: { slug: string }) {
   const [saving, setSaving]     = useState(false);
   const [saved, setSaved]       = useState(false);
   const [editingItem, setEditingItem] = useState<{ catIdx: number; itemIdx: number | null } | null>(null);
-  const [draft, setDraft]       = useState<MenuItem>({ id: newId(), name: "", ingredients: "", price: 0, popular: false, spicy: false, vegetarian: false, active: true });
+  const [draft, setDraft]       = useState<MenuItem>({ id: newId(), name: "", ingredients: "", price: 0, popular: false, spicy: false, vegetarian: false, active: true, image_url: "" });
   const [showNewCat, setShowNewCat] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [newCatEmoji, setNewCatEmoji] = useState("🍕");
+  const [uploadingItemImg, setUploadingItemImg] = useState(false);
+
+  const uploadItemImage = async (file: File) => {
+    setUploadingItemImg(true);
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const res = await fetch(`/${slug}/api/upload`, { method: "POST", body: fd });
+      const d = await res.json();
+      if (d.url) setDraft((prev) => ({ ...prev, image_url: d.url }));
+    } catch {}
+    finally { setUploadingItemImg(false); }
+  };
 
   useEffect(() => {
     fetch(`/${slug}/api/menu`).then((r) => r.json()).then(setMenu).catch(() => {});
@@ -338,7 +371,7 @@ function MenuTab({ slug }: { slug: string }) {
   };
   const openEdit = (ci: number, ii: number | null) => {
     setEditingItem({ catIdx: ci, itemIdx: ii });
-    setDraft(ii === null ? { id: newId(), name: "", ingredients: "", price: 0, popular: false, spicy: false, vegetarian: false, active: true } : { ...menu[ci].items[ii] });
+    setDraft(ii === null ? { id: newId(), name: "", ingredients: "", price: 0, popular: false, spicy: false, vegetarian: false, active: true, image_url: "" } : { ...menu[ci].items[ii] });
   };
   const saveItem = () => {
     if (!draft.name.trim() || !editingItem) return;
@@ -424,6 +457,22 @@ function MenuTab({ slug }: { slug: string }) {
               <label className="modal-field"><span>Ingredienti</span><textarea value={draft.ingredients} onChange={(e) => setDraft({ ...draft, ingredients: e.target.value })} rows={2} /></label>
               <label className="modal-field"><span>Descrizione breve</span><input value={draft.description ?? ""} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /></label>
               <label className="modal-field"><span>Prezzo (€) *</span><input type="number" step="0.5" min="0" value={draft.price} onChange={(e) => setDraft({ ...draft, price: parseFloat(e.target.value) || 0 })} /></label>
+              <div className="modal-field">
+                <span>Foto prodotto</span>
+                <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                  {draft.image_url && (
+                    <img src={draft.image_url} alt="" style={{width:60,height:60,objectFit:"cover",borderRadius:8,border:"1px solid #EDE0CC",flexShrink:0}} />
+                  )}
+                  <label style={{padding:"8px 14px",background:"#F5EADA",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".82rem",cursor:"pointer",fontFamily:"inherit"}}>
+                    {uploadingItemImg ? "Caricamento…" : "📁 Carica foto"}
+                    <input type="file" accept="image/*" style={{display:"none"}}
+                      onChange={(e) => e.target.files?.[0] && uploadItemImage(e.target.files[0])} />
+                  </label>
+                  {draft.image_url && (
+                    <button type="button" onClick={() => setDraft({...draft, image_url: ""})} style={{padding:"8px 12px",background:"transparent",border:"1px solid #EDE0CC",borderRadius:8,fontSize:".82rem",cursor:"pointer",color:"#7A7770"}}>Rimuovi</button>
+                  )}
+                </div>
+              </div>
               <div className="modal-flags">
                 {(["popular","spicy","vegetarian","active"] as const).map((flag) => (
                   <label key={flag} className="flag-toggle">

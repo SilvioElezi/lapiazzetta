@@ -5,7 +5,7 @@ import { useCart } from "./CartContext";
 type MenuItem = {
   id: string; name: string; ingredients: string; price: number;
   popular?: boolean; spicy?: boolean; vegetarian?: boolean;
-  description?: string; active?: boolean;
+  description?: string; active?: boolean; image_url?: string;
 };
 type MenuCategory = { category: string; emoji: string; items: MenuItem[] };
 
@@ -16,7 +16,6 @@ function ItemPill({ item }: { item: MenuItem }) {
   const qty = cartItem?.qty ?? 0;
 
   const handlePillClick = () => {
-    if (qty === 0) addToCart(item);
     setPopupOpen(true);
   };
 
@@ -34,6 +33,9 @@ function ItemPill({ item }: { item: MenuItem }) {
         <>
           <div className="popup-backdrop" onClick={() => setPopupOpen(false)} />
           <div className="popup" role="dialog">
+            {item.image_url && (
+              <img src={item.image_url} alt={item.name} style={{width:"100%",height:180,objectFit:"cover",borderRadius:"12px 12px 0 0",display:"block"}} />
+            )}
             <div className="popup__header">
               <div>
                 <p className="popup__name">{item.name}</p>
@@ -43,9 +45,9 @@ function ItemPill({ item }: { item: MenuItem }) {
               <button className="popup__close" onClick={() => setPopupOpen(false)}>✕</button>
             </div>
             <div className="popup__controls">
-              <button className="qty-btn qty-btn--minus" onClick={() => { decrease(item.name); if (qty <= 1) setPopupOpen(false); }}>−</button>
+              <button className="qty-btn qty-btn--minus" style={{visibility: qty === 0 ? "hidden" : "visible"}} onClick={() => { decrease(item.name); if (qty <= 1) setPopupOpen(false); }}>−</button>
               <span className="qty-display">{qty}</span>
-              <button className="qty-btn qty-btn--plus" onClick={() => increase(item.name)}>+</button>
+              <button className="qty-btn qty-btn--plus" onClick={() => qty === 0 ? addToCart(item) : increase(item.name)}>+</button>
             </div>
             <div className="popup__footer">
               <span className="popup__unit-price">€{item.price.toFixed(2)} cad.</span>
