@@ -296,13 +296,18 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
                   onChange={(e) => setPhone(e.target.value)} autoComplete="tel" />
               </label>
               <div className="field"><span>Indirizzo di consegna *</span>
+                <button type="button" className={`gps-banner${lat ? " gps-banner--done" : ""}`} onClick={getGPS} disabled={locating}>
+                  <span className="gps-banner__icon">{locating ? "⏳" : lat ? "✅" : "📍"}</span>
+                  <span className="gps-banner__text">
+                    <strong>{locating ? "Rilevamento in corso…" : lat ? "Posizione rilevata automaticamente" : "Usa la mia posizione attuale"}</strong>
+                    {!lat && !locating && <span>Compila l&apos;indirizzo in un click</span>}
+                  </span>
+                </button>
+                <div className="addr-divider"><span>oppure scrivi manualmente</span></div>
                 <div className="addr-row">
                   <input type="text" placeholder="Via / Piazza / Corso…" value={street}
                     onChange={(e) => { setStreet(e.target.value); setLat(null); setLng(null); setAddressError(""); }}
-                    autoComplete="address-line1" style={{flex:3}} />
-                  <button type="button" className="gps-btn" onClick={getGPS} disabled={locating} title="Rileva posizione">
-                    {locating ? "⏳" : "📍"}
-                  </button>
+                    autoComplete="address-line1" />
                 </div>
                 <div className="addr-row" style={{marginTop:6}}>
                   <input type="text" placeholder="N° civico" value={civic}
@@ -312,7 +317,6 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
                     onChange={(e) => { setCap(e.target.value); setLat(null); setLng(null); setAddressError(""); }}
                     autoComplete="postal-code" inputMode="numeric" style={{flex:1}} />
                 </div>
-                {lat && <p className="gps-confirm">📍 Posizione GPS rilevata</p>}
               </div>
               <div className="sms-notice">
                 <span className="sms-notice__icon">💬</span>
@@ -440,10 +444,16 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
         .field input:focus{outline:none;border-color:#B03A2E}
         .addr-row{display:flex;gap:8px}
         .addr-row input{flex:1}
-        .gps-btn{width:44px;height:44px;border-radius:10px;border:1.5px solid #EDE0CC;background:#fff;font-size:1.1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:border-color .15s;flex-shrink:0}
-        .gps-btn:hover{border-color:#B03A2E}
-        .gps-btn:disabled{opacity:.6;cursor:wait}
-        .gps-confirm{font-size:.75rem;color:#2E7D32;margin-top:3px}
+        .gps-banner{width:100%;display:flex;align-items:center;gap:12px;padding:12px 14px;background:#EBF5EB;border:1.5px solid #A5D6A7;border-radius:10px;cursor:pointer;text-align:left;font-family:inherit;transition:background .15s,border-color .15s;margin-bottom:2px}
+        .gps-banner:hover:not(:disabled){background:#DCEDC8;border-color:#81C784}
+        .gps-banner:disabled{cursor:wait;opacity:.7}
+        .gps-banner--done{background:#F1F8E9;border-color:#81C784}
+        .gps-banner__icon{font-size:1.4rem;flex-shrink:0}
+        .gps-banner__text{display:flex;flex-direction:column;gap:1px}
+        .gps-banner__text strong{font-size:.88rem;font-weight:600;color:#1B5E20}
+        .gps-banner__text span{font-size:.75rem;color:#388E3C}
+        .addr-divider{display:flex;align-items:center;gap:8px;margin:10px 0 8px;color:#B0ACA5;font-size:.72rem}
+        .addr-divider::before,.addr-divider::after{content:"";flex:1;height:1px;background:#EDE0CC}
         .sms-notice{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;background:#EBF0FB;border-radius:8px;border-left:3px solid #3B5BDB;font-size:.8rem;color:#1E3A8A;line-height:1.5}
         .sms-notice__icon{flex-shrink:0;margin-top:1px}
         .recap{background:#fff;border:1px solid #EDE0CC;border-radius:10px;padding:14px}
