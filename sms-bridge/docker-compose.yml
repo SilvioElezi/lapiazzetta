@@ -1,0 +1,6 @@
+services:
+  sms-bridge:
+    build: .
+    restart: unless-stopped
+    network_mode: host   # uses host network so container can reach the router (e.g. 192.168.1.1)
+    env_file: .env
