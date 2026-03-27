@@ -75,7 +75,6 @@ export type Business = {
   name: string;
   logo_url?: string;
   phone?: string;
-  wa_phone?: string;
   address?: string;
   lat?: number;
   lng?: number;

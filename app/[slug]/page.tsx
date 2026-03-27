@@ -14,7 +14,7 @@ type Props = { params: Promise<{ slug: string }> };
 async function getBusiness(slug: string): Promise<Business | null> {
   const { data } = await supabaseAdmin
     .from("businesses")
-    .select("id, slug, name, logo_url, phone, wa_phone, address, lat, lng, radius_km")
+    .select("id, slug, name, logo_url, phone, address, lat, lng, radius_km")
     .eq("slug", slug)
     .single();
   return data ?? null;

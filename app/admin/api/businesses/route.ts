@@ -20,7 +20,6 @@ export async function POST(req: NextRequest) {
       slug:                   body.slug,
       name:                   body.name,
       phone:                  body.phone ?? null,
-      wa_phone:               body.wa_phone ?? null,
       address:                body.address ?? null,
       lat:                    body.lat ?? null,
       lng:                    body.lng ?? null,

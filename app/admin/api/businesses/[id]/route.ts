@@ -13,7 +13,6 @@ export async function PATCH(
     .update({
       name:                   body.name,
       phone:                  body.phone ?? null,
-      wa_phone:               body.wa_phone ?? null,
       address:                body.address ?? null,
       lat:                    body.lat ?? null,
       lng:                    body.lng ?? null,

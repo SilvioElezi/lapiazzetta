@@ -5,7 +5,7 @@ import type { Business } from "../../lib/types";
 type FormState = Omit<Business, "id"> & { id?: string };
 
 const EMPTY_FORM: FormState = {
-  slug: "", name: "", phone: "", wa_phone: "",
+  slug: "", name: "", phone: "",
   address: "", lat: undefined, lng: undefined,
   radius_km: 5, logo_url: "", subscription_expires_at: "",
 };
@@ -206,7 +206,6 @@ export default function AdminPage() {
               <Field label="Nome *" value={form.name} onChange={(v) => setForm((f) => ({ ...f, name: v }))} />
               <Field label="Slug * (es: lapiaggetta)" value={form.slug} onChange={(v) => setForm((f) => ({ ...f, slug: v.toLowerCase().replace(/\s+/g, "-") }))} disabled={editing !== "new"} />
               <Field label="Telefono" value={form.phone ?? ""} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
-              <Field label="WhatsApp (es: 393308860293)" value={form.wa_phone ?? ""} onChange={(v) => setForm((f) => ({ ...f, wa_phone: v }))} />
               <Field label="Indirizzo" value={form.address ?? ""} onChange={(v) => setForm((f) => ({ ...f, address: v }))} style={{ gridColumn: "span 2" }} />
               <Field label="Raggio consegna (km)" value={form.radius_km.toString()} onChange={(v) => setForm((f) => ({ ...f, radius_km: parseFloat(v) || 5 }))} type="number" />
             </div>
