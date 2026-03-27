@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useCart } from "./CartContext";
+import { haversineKm } from "../lib/haversine";
 import type { Business } from "../lib/types";
 
 type Step = "cart" | "form" | "confirm" | "done";
@@ -26,9 +27,13 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
   const [orderId,    setOrderId]    = useState("");
 
   // OTP confirmation
-  const [otp,        setOtp]        = useState("");
-  const [confirming, setConfirming] = useState(false);
-  const [otpError,   setOtpError]   = useState("");
+  const [otp,          setOtp]          = useState("");
+  const [confirming,   setConfirming]   = useState(false);
+  const [otpError,     setOtpError]     = useState("");
+
+  // Address / radius error
+  const [addressError, setAddressError] = useState("");
+  const [geocoding,    setGeocoding]    = useState(false);
 
   const itemCount = cart.reduce((s: number, i: any) => s + i.qty, 0);
 
@@ -63,6 +68,50 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
 
   const placeOrder = async () => {
     if (!clientName.trim() || !phone.trim() || !address.trim()) return;
+    setAddressError("");
+
+    let orderLat = lat;
+    let orderLng = lng;
+
+    // If no GPS coords, geocode the typed address with Nominatim (free, no key)
+    if (orderLat == null || orderLng == null) {
+      setGeocoding(true);
+      try {
+        const q = encodeURIComponent(address.trim());
+        const url = `https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1&countrycodes=it`;
+        const res = await fetch(url, { headers: { "Accept-Language": "it" } });
+        const results = await res.json();
+        if (!results || results.length === 0) {
+          setAddressError("Indirizzo non trovato. Prova a essere più preciso o usa il GPS 📍");
+          setGeocoding(false);
+          return;
+        }
+        orderLat = parseFloat(results[0].lat);
+        orderLng = parseFloat(results[0].lon);
+        setLat(orderLat);
+        setLng(orderLng);
+      } catch {
+        setAddressError("Impossibile verificare l'indirizzo. Usa il pulsante GPS 📍");
+        setGeocoding(false);
+        return;
+      }
+      setGeocoding(false);
+    }
+
+    // Client-side radius check (server will also verify, but this gives instant feedback)
+    if (
+      orderLat != null && orderLng != null &&
+      business?.lat != null && business?.lng != null && business?.radius_km != null
+    ) {
+      const dist = haversineKm(business.lat, business.lng, orderLat, orderLng);
+      if (dist > business.radius_km) {
+        setAddressError(
+          `Il tuo indirizzo è a ${dist.toFixed(1)} km dal locale. La consegna arriva fino a ${business.radius_km} km.`
+        );
+        return;
+      }
+    }
+
     setPlacing(true);
     try {
       const orderUrl = slug ? `/${slug}/api/order` : "/api/order";
@@ -73,7 +122,8 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
           clientName: clientName.trim(),
           phone:      phone.trim(),
           address:    address.trim(),
-          lat, lng,
+          lat: orderLat,
+          lng: orderLng,
           items: cart.map((i: any) => ({ id: i.id, name: i.name, qty: i.qty, price: i.price })),
           total,
         }),
@@ -84,7 +134,7 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
       setOtp("");
       setOtpError("");
       setStep("confirm");
-    } catch (err: any) { alert(err.message ?? "Errore nell'invio. Riprova."); }
+    } catch (err: any) { setAddressError(err.message ?? "Errore nell'invio. Riprova."); }
     finally { setPlacing(false); }
   };
 
@@ -109,7 +159,7 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
     setOpen(false); setStep("cart");
     setClientName(""); setPhone(""); setAddress("");
     setLat(null); setLng(null);
-    setOrderId(""); setOtp(""); setOtpError("");
+    setOrderId(""); setOtp(""); setOtpError(""); setAddressError("");
   };
 
   return (
@@ -186,7 +236,7 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
               <div className="field"><span>Indirizzo di consegna *</span>
                 <div className="addr-row">
                   <input type="text" placeholder="Via Roma 12, Città" value={address}
-                    onChange={(e) => { setAddress(e.target.value); setLat(null); setLng(null); }} />
+                    onChange={(e) => { setAddress(e.target.value); setLat(null); setLng(null); setAddressError(""); }} />
                   <button type="button" className="gps-btn" onClick={getGPS} disabled={locating}>
                     {locating ? "⏳" : "📍"}
                   </button>
@@ -210,11 +260,12 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
             </div>
           </div>
           <div className="drawer__foot">
+            {addressError && <div className="addr-error">🚫 {addressError}</div>}
             {!onlineOrders
               ? <div className="orders-closed">🔴 Ordini online sospesi. Chiamaci al {business?.phone ?? "+39 030 886 0293"}</div>
               : <button className="btn-primary" onClick={placeOrder}
-                  disabled={placing || !clientName || !phone || !address}>
-                  {placing ? "Invio in corso…" : "Continua →"}
+                  disabled={placing || geocoding || !clientName || !phone || !address}>
+                  {geocoding ? "Verifica indirizzo…" : placing ? "Invio in corso…" : "Continua →"}
                 </button>
             }
           </div>
@@ -326,6 +377,7 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
         .recap__label{font-size:.72rem;font-weight:500;text-transform:uppercase;letter-spacing:.08em;color:#7A7770;margin-bottom:8px}
         .recap__row{display:flex;justify-content:space-between;font-size:.85rem;color:#3A3A36;padding:3px 0}
         .recap__total{display:flex;justify-content:space-between;font-weight:600;font-size:.9rem;color:#1C1C1A;border-top:1px solid #EDE0CC;margin-top:8px;padding-top:8px}
+        .addr-error{background:#FDECEA;border:1px solid #F5B4AD;border-radius:10px;padding:12px 14px;font-size:.83rem;color:#8C2318;line-height:1.5}
         .orders-closed{background:#FDECEA;border:1px solid #F5B4AD;border-radius:10px;padding:14px;font-size:.85rem;color:#8C2318;text-align:center;line-height:1.6}
         .btn-primary{width:100%;padding:14px;background:#B03A2E;color:#fff;border:none;border-radius:12px;font-family:inherit;font-size:.95rem;font-weight:500;cursor:pointer;transition:background .15s,transform .15s}
         .btn-primary:hover:not(:disabled){background:#C9503F;transform:translateY(-1px)}
