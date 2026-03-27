@@ -3,8 +3,8 @@ import "./globals.css";
 import { CartProvider } from "../components/CartContext";
 
 export const metadata: Metadata = {
-  title: "La Piazzetta — Pizzeria & Consegna a domicilio",
-  description: "Pizza artigianale, impasto 48h, consegna a domicilio.",
+  title: "8bit.al — Piattaforma ordini online per ristoranti",
+  description: "Sistema di ordinazione online con conferma SMS, dashboard staff in tempo reale e notifiche Telegram.",
 };
 
 export default function RootLayout({
