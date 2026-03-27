@@ -20,10 +20,49 @@ export default function AdminPage() {
   const [loading,    setLoading]    = useState(false);
   const [form,       setForm]       = useState<FormState>(EMPTY_FORM);
   const [editing,    setEditing]    = useState<string | null>(null);
-  const [saving,     setSaving]     = useState(false);
+  const [saving,       setSaving]       = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
-  const [error,      setError]      = useState("");
-  const [success,    setSuccess]    = useState("");
+  const [error,        setError]        = useState("");
+  const [success,      setSuccess]      = useState("");
+  const [locating,     setLocating]     = useState(false);
+  const [locationLabel, setLocationLabel] = useState("");
+
+  const useMyLocation = () => {
+    if (!navigator.geolocation) return;
+    setLocating(true); setLocationLabel("");
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        setForm((f) => ({ ...f, lat, lng }));
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, { headers: { "Accept-Language": "it" } });
+          const d = await res.json();
+          setLocationLabel(d.display_name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+        } catch { setLocationLabel(`${lat.toFixed(5)}, ${lng.toFixed(5)}`); }
+        setLocating(false);
+      },
+      () => setLocating(false)
+    );
+  };
+
+  const searchAddress = async (query: string) => {
+    if (!query.trim()) return;
+    setLocating(true); setLocationLabel("");
+    try {
+      const q = encodeURIComponent(query.trim());
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${q}&format=json&limit=1`, { headers: { "Accept-Language": "it" } });
+      const results = await res.json();
+      if (results && results.length > 0) {
+        const lat = parseFloat(results[0].lat);
+        const lng = parseFloat(results[0].lon);
+        setForm((f) => ({ ...f, lat, lng }));
+        setLocationLabel(results[0].display_name);
+      } else {
+        setLocationLabel("Indirizzo non trovato");
+      }
+    } catch { setLocationLabel("Errore nella ricerca"); }
+    setLocating(false);
+  };
 
   const checkAuth = async () => {
     setAuthLoading(true); setAuthError("");
@@ -73,16 +112,16 @@ export default function AdminPage() {
   const startEdit = (b: Business) => {
     setEditing(b.id);
     setForm({ ...b });
-    setError(""); setSuccess("");
+    setError(""); setSuccess(""); setLocationLabel("");
   };
 
   const startCreate = () => {
     setEditing("new");
     setForm(EMPTY_FORM);
-    setError(""); setSuccess("");
+    setError(""); setSuccess(""); setLocationLabel("");
   };
 
-  const cancel = () => { setEditing(null); setForm(EMPTY_FORM); setError(""); setSuccess(""); };
+  const cancel = () => { setEditing(null); setForm(EMPTY_FORM); setError(""); setSuccess(""); setLocationLabel(""); };
 
   const save = async () => {
     if (!form.slug.trim() || !form.name.trim()) {
@@ -169,10 +208,51 @@ export default function AdminPage() {
               <Field label="Telefono" value={form.phone ?? ""} onChange={(v) => setForm((f) => ({ ...f, phone: v }))} />
               <Field label="WhatsApp (es: 393308860293)" value={form.wa_phone ?? ""} onChange={(v) => setForm((f) => ({ ...f, wa_phone: v }))} />
               <Field label="Indirizzo" value={form.address ?? ""} onChange={(v) => setForm((f) => ({ ...f, address: v }))} style={{ gridColumn: "span 2" }} />
-              <Field label="Latitudine" value={form.lat?.toString() ?? ""} onChange={(v) => setForm((f) => ({ ...f, lat: v ? parseFloat(v) : undefined }))} type="number" />
-              <Field label="Longitudine" value={form.lng?.toString() ?? ""} onChange={(v) => setForm((f) => ({ ...f, lng: v ? parseFloat(v) : undefined }))} type="number" />
               <Field label="Raggio consegna (km)" value={form.radius_km.toString()} onChange={(v) => setForm((f) => ({ ...f, radius_km: parseFloat(v) || 5 }))} type="number" />
-              <Field label="Scadenza abbonamento" value={form.subscription_expires_at ? form.subscription_expires_at.slice(0, 10) : ""} onChange={(v) => setForm((f) => ({ ...f, subscription_expires_at: v || "" }))} type="date" style={{ gridColumn: "span 2" }} />
+            </div>
+
+            {/* ── Location picker ── */}
+            <div style={{marginTop:16,display:"flex",flexDirection:"column",gap:8}}>
+              <p style={s.fieldLabel}>Posizione del locale</p>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                <div style={{display:"flex",flex:1,minWidth:200,border:"1.5px solid #EDE0CC",borderRadius:8,overflow:"hidden",background:"#fff"}}>
+                  <input
+                    type="text"
+                    placeholder="Cerca indirizzo… (es: Via Roma 1, Bergamo)"
+                    defaultValue={form.address ?? ""}
+                    onKeyDown={(e) => e.key === "Enter" && searchAddress((e.target as HTMLInputElement).value)}
+                    style={{flex:1,padding:"10px 12px",border:"none",outline:"none",fontSize:".88rem",fontFamily:"inherit",color:"#1C1C1A"}}
+                  />
+                  <button
+                    type="button"
+                    onClick={(e) => searchAddress(((e.currentTarget as HTMLButtonElement).previousElementSibling as HTMLInputElement).value)}
+                    style={{padding:"0 14px",background:"#1C1C1A",color:"#FDF6EC",border:"none",cursor:"pointer",fontSize:".82rem",fontWeight:500,whiteSpace:"nowrap"}}
+                  >
+                    {locating ? "…" : "Cerca"}
+                  </button>
+                </div>
+                <button type="button" onClick={useMyLocation} disabled={locating} style={s.gpsBtn}>
+                  {locating ? "⏳" : "📍 GPS"}
+                </button>
+              </div>
+              {locationLabel && (
+                <p style={{fontSize:".75rem",color: locationLabel === "Indirizzo non trovato" ? "#B03A2E" : "#2E7D32",lineHeight:1.4}}>
+                  {locationLabel === "Indirizzo non trovato" ? "⚠️ " : "✓ "}{locationLabel}
+                </p>
+              )}
+              <div style={s.grid2}>
+                <Field label="Latitudine" value={form.lat?.toString() ?? ""} onChange={(v) => { setForm((f) => ({ ...f, lat: v ? parseFloat(v) : undefined })); setLocationLabel(""); }} type="number" />
+                <Field label="Longitudine" value={form.lng?.toString() ?? ""} onChange={(v) => { setForm((f) => ({ ...f, lng: v ? parseFloat(v) : undefined })); setLocationLabel(""); }} type="number" />
+              </div>
+              {form.lat != null && form.lng != null && (
+                <a href={`https://maps.google.com/?q=${form.lat},${form.lng}`} target="_blank" rel="noopener noreferrer" style={{fontSize:".75rem",color:"#B03A2E",textDecoration:"none"}}>
+                  🗺 Verifica su Google Maps
+                </a>
+              )}
+            </div>
+
+            <div style={{marginTop:16}}>
+              <Field label="Scadenza abbonamento" value={form.subscription_expires_at ? form.subscription_expires_at.slice(0, 10) : ""} onChange={(v) => setForm((f) => ({ ...f, subscription_expires_at: v || "" }))} type="date" />
             </div>
 
             {/* Logo upload */}
@@ -284,6 +364,7 @@ const s: Record<string, React.CSSProperties> = {
   btnPrimary:   { padding:"10px 20px", background:"#B03A2E", color:"#fff", border:"none", borderRadius:8, fontSize:".9rem", fontWeight:500, cursor:"pointer" },
   btnGhost:     { padding:"10px 20px", background:"transparent", color:"#7A7770", border:"1px solid #EDE0CC", borderRadius:8, fontSize:".9rem", cursor:"pointer" },
   uploadBtn:    { padding:"9px 14px", background:"#F5EADA", border:"1.5px solid #EDE0CC", borderRadius:8, fontSize:".85rem", cursor:"pointer", fontFamily:"inherit" },
+  gpsBtn:       { padding:"9px 14px", background:"#F5EADA", border:"1.5px solid #EDE0CC", borderRadius:8, fontSize:".85rem", cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" as const, flexShrink:0 },
   logoSection:  { marginTop:16 },
   errText:      { fontSize:".8rem", color:"#B03A2E", textAlign:"center" },
   errBanner:    { background:"#FDECEA", border:"1px solid #F5B4AD", borderRadius:10, padding:"12px 16px", fontSize:".85rem", color:"#8C2318", marginBottom:16 },
