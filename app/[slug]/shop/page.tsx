@@ -130,7 +130,7 @@ function OrdersTab({ role, slug }: { role: StaffRole; slug: string }) {
                   target="_blank" rel="noopener noreferrer" className="order-client__link">📍 {order.address}</a>
               </div>
               <ul className="order-items">
-                {order.items.map((item) => (
+                {order.items.filter((it) => it.id !== "_notes_").map((item) => (
                   <li key={item.id} className="order-item">
                     <span className="order-item__qty">{item.qty}×</span>
                     <span className="order-item__name">{item.name}</span>
@@ -138,6 +138,12 @@ function OrdersTab({ role, slug }: { role: StaffRole; slug: string }) {
                   </li>
                 ))}
               </ul>
+              {order.items.find((it) => it.id === "_notes_") && (
+                <div className="order-notes">
+                  <span>📝</span>
+                  <span>{order.items.find((it) => it.id === "_notes_")!.name}</span>
+                </div>
+              )}
               <div className="order-total">
                 <span>Totale</span>
                 <span className="order-total__amt">€{order.total.toFixed(2)}</span>
@@ -482,6 +488,103 @@ function MenuTab({ slug }: { slug: string }) {
                   </label>
                 ))}
               </div>
+
+              {/* ── PRODUCT OPTIONS ── */}
+              <div className="modal-field">
+                <span>Opzioni prodotto</span>
+
+                {/* Sizes */}
+                <div className="opt-section">
+                  <label className="opt-section__toggle">
+                    <input type="checkbox"
+                      checked={!!draft.options?.sizes?.enabled}
+                      onChange={(e) => setDraft((d) => ({ ...d, options: { ...d.options, sizes: { enabled: e.target.checked, items: d.options?.sizes?.items ?? [] } } }))}
+                    />
+                    <span>Taglie / Dimensioni</span>
+                  </label>
+                  {draft.options?.sizes?.enabled && (
+                    <div className="opt-items">
+                      {(draft.options.sizes.items).map((s, i) => (
+                        <div key={i} className="opt-item-row">
+                          <input className="opt-item-name" placeholder="es. Grande" value={s.name}
+                            onChange={(e) => setDraft((d) => { const items = [...(d.options?.sizes?.items ?? [])]; items[i] = { ...s, name: e.target.value }; return { ...d, options: { ...d.options, sizes: { enabled: true, items } } }; })} />
+                          <span className="opt-item-plus">+€</span>
+                          <input className="opt-item-price" type="number" step="0.5" min="0" value={s.extra}
+                            onChange={(e) => setDraft((d) => { const items = [...(d.options?.sizes?.items ?? [])]; items[i] = { ...s, extra: parseFloat(e.target.value) || 0 }; return { ...d, options: { ...d.options, sizes: { enabled: true, items } } }; })} />
+                          <button type="button" className="opt-item-del"
+                            onClick={() => setDraft((d) => ({ ...d, options: { ...d.options, sizes: { enabled: true, items: (d.options?.sizes?.items ?? []).filter((_, j) => j !== i) } } }))}>✕</button>
+                        </div>
+                      ))}
+                      <button type="button" className="opt-add-btn"
+                        onClick={() => setDraft((d) => ({ ...d, options: { ...d.options, sizes: { enabled: true, items: [...(d.options?.sizes?.items ?? []), { name: "", extra: 0 }] } } }))}>
+                        + Aggiungi taglia
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Ingredients */}
+                <div className="opt-section">
+                  <label className="opt-section__toggle">
+                    <input type="checkbox"
+                      checked={!!draft.options?.ingredients?.enabled}
+                      onChange={(e) => setDraft((d) => ({ ...d, options: { ...d.options, ingredients: { enabled: e.target.checked, items: d.options?.ingredients?.items ?? [] } } }))}
+                    />
+                    <span>Ingredienti selezionabili</span>
+                  </label>
+                  {draft.options?.ingredients?.enabled && (
+                    <div className="opt-items">
+                      {(draft.options.ingredients.items).map((ing, i) => (
+                        <div key={i} className="opt-item-row">
+                          <input className="opt-item-name" placeholder="es. Funghi" value={ing.name}
+                            onChange={(e) => setDraft((d) => { const items = [...(d.options?.ingredients?.items ?? [])]; items[i] = { ...ing, name: e.target.value }; return { ...d, options: { ...d.options, ingredients: { enabled: true, items } } }; })} />
+                          <label className="opt-item-default">
+                            <input type="checkbox" checked={ing.default_selected}
+                              onChange={(e) => setDraft((d) => { const items = [...(d.options?.ingredients?.items ?? [])]; items[i] = { ...ing, default_selected: e.target.checked }; return { ...d, options: { ...d.options, ingredients: { enabled: true, items } } }; })} />
+                            <span>di default</span>
+                          </label>
+                          <button type="button" className="opt-item-del"
+                            onClick={() => setDraft((d) => ({ ...d, options: { ...d.options, ingredients: { enabled: true, items: (d.options?.ingredients?.items ?? []).filter((_, j) => j !== i) } } }))}>✕</button>
+                        </div>
+                      ))}
+                      <button type="button" className="opt-add-btn"
+                        onClick={() => setDraft((d) => ({ ...d, options: { ...d.options, ingredients: { enabled: true, items: [...(d.options?.ingredients?.items ?? []), { name: "", default_selected: true }] } } }))}>
+                        + Aggiungi ingrediente
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Extras */}
+                <div className="opt-section">
+                  <label className="opt-section__toggle">
+                    <input type="checkbox"
+                      checked={!!draft.options?.extras?.enabled}
+                      onChange={(e) => setDraft((d) => ({ ...d, options: { ...d.options, extras: { enabled: e.target.checked, items: d.options?.extras?.items ?? [] } } }))}
+                    />
+                    <span>Extra aggiuntivi</span>
+                  </label>
+                  {draft.options?.extras?.enabled && (
+                    <div className="opt-items">
+                      {(draft.options.extras.items).map((ex, i) => (
+                        <div key={i} className="opt-item-row">
+                          <input className="opt-item-name" placeholder="es. Mozzarella extra" value={ex.name}
+                            onChange={(e) => setDraft((d) => { const items = [...(d.options?.extras?.items ?? [])]; items[i] = { ...ex, name: e.target.value }; return { ...d, options: { ...d.options, extras: { enabled: true, items } } }; })} />
+                          <span className="opt-item-plus">+€</span>
+                          <input className="opt-item-price" type="number" step="0.5" min="0" value={ex.extra}
+                            onChange={(e) => setDraft((d) => { const items = [...(d.options?.extras?.items ?? [])]; items[i] = { ...ex, extra: parseFloat(e.target.value) || 0 }; return { ...d, options: { ...d.options, extras: { enabled: true, items } } }; })} />
+                          <button type="button" className="opt-item-del"
+                            onClick={() => setDraft((d) => ({ ...d, options: { ...d.options, extras: { enabled: true, items: (d.options?.extras?.items ?? []).filter((_, j) => j !== i) } } }))}>✕</button>
+                        </div>
+                      ))}
+                      <button type="button" className="opt-add-btn"
+                        onClick={() => setDraft((d) => ({ ...d, options: { ...d.options, extras: { enabled: true, items: [...(d.options?.extras?.items ?? []), { name: "", extra: 0 }] } } }))}>
+                        + Aggiungi extra
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
             <div className="modal__foot">
               <button className="btn-cancel-modal" onClick={() => setEditingItem(null)}>Annulla</button>
@@ -738,4 +841,20 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA;min-height:100vh}
 .btn-cancel-modal{padding:9px 18px;background:transparent;color:#7A7770;border:1px solid #EDE0CC;border-radius:8px;font-size:.85rem;cursor:pointer}
 .btn-save-modal{padding:9px 18px;background:#B03A2E;color:#fff;border:none;border-radius:8px;font-size:.85rem;font-weight:500;cursor:pointer}
 .btn-save-modal:disabled{opacity:.5;cursor:not-allowed}
+.order-notes{display:flex;gap:6px;align-items:flex-start;padding:8px 10px;background:#FFFDE7;border:1px solid #FFE082;border-radius:8px;font-size:.83rem;color:#5D4037;line-height:1.4}
+.opt-section{margin-top:10px;background:#F9F5EE;border:1px solid #EDE0CC;border-radius:8px;padding:10px 12px}
+.opt-section__toggle{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.88rem;font-weight:500;color:#1C1C1A}
+.opt-section__toggle input{width:16px;height:16px;accent-color:#B03A2E;cursor:pointer;flex-shrink:0}
+.opt-items{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+.opt-item-row{display:flex;align-items:center;gap:6px}
+.opt-item-name{flex:1;padding:6px 8px;border:1.5px solid #EDE0CC;border-radius:6px;font-size:.82rem;font-family:inherit;outline:none}
+.opt-item-name:focus{border-color:#B03A2E}
+.opt-item-plus{font-size:.78rem;color:#7A7770;white-space:nowrap;flex-shrink:0}
+.opt-item-price{width:60px;padding:6px 8px;border:1.5px solid #EDE0CC;border-radius:6px;font-size:.82rem;font-family:inherit;text-align:center;outline:none}
+.opt-item-price:focus{border-color:#B03A2E}
+.opt-item-del{background:transparent;border:none;cursor:pointer;color:#B03A2E;font-size:.85rem;padding:4px;flex-shrink:0}
+.opt-item-default{display:flex;align-items:center;gap:4px;font-size:.75rem;color:#7A7770;white-space:nowrap;cursor:pointer;flex-shrink:0}
+.opt-item-default input{width:14px;height:14px;accent-color:#B03A2E;cursor:pointer}
+.opt-add-btn{background:transparent;border:1px dashed #EDE0CC;border-radius:6px;padding:5px 10px;font-size:.78rem;color:#7A7770;cursor:pointer;font-family:inherit;transition:border-color .15s,color .15s;text-align:left;width:fit-content}
+.opt-add-btn:hover{border-color:#B03A2E;color:#B03A2E}
 `;

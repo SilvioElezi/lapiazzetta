@@ -71,6 +71,9 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
   const [lat,        setLat]        = useState<number | null>(null);
   const [lng,        setLng]        = useState<number | null>(null);
 
+  // Customer notes
+  const [notes, setNotes] = useState("");
+
   // Order result
   const [placing,    setPlacing]    = useState(false);
   const [orderId,    setOrderId]    = useState("");
@@ -172,6 +175,10 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
     setPlacing(true);
     try {
       const orderUrl = slug ? `/${slug}/api/order` : "/api/order";
+      const items = [
+        ...cart.map((i: any) => ({ id: i.id, name: i.name, qty: i.qty, price: i.price })),
+        ...(notes.trim() ? [{ id: "_notes_", name: notes.trim(), qty: 0, price: 0 }] : []),
+      ];
       const res = await fetch(orderUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -181,7 +188,7 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
           address:    address.trim(),
           lat: orderLat,
           lng: orderLng,
-          items: cart.map((i: any) => ({ id: i.id, name: i.name, qty: i.qty, price: i.price })),
+          items,
           total,
         }),
       });
@@ -215,7 +222,7 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
   const resetAndClose = () => {
     setOpen(false); setStep("cart");
     setClientName(""); setPhone(""); setStreet(""); setCivic(""); setCap("");
-    setLat(null); setLng(null);
+    setLat(null); setLng(null); setNotes("");
     setOrderId(""); setOtp(""); setOtpError(""); setAddressError("");
   };
 
@@ -318,6 +325,17 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
                     autoComplete="postal-code" inputMode="numeric" style={{flex:1}} />
                 </div>
               </div>
+              <label className="field"><span>Note per la cucina (opzionale)</span>
+                <textarea
+                  placeholder="es. senza cipolla, allergie, citofono rotto…"
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  rows={2}
+                  style={{padding:"11px 14px",border:"1.5px solid #EDE0CC",borderRadius:10,background:"#fff",fontSize:".92rem",color:"#1C1C1A",resize:"vertical",fontFamily:"inherit",width:"100%",transition:"border-color .15s",outline:"none"}}
+                  onFocus={(e) => (e.target.style.borderColor = "#B03A2E")}
+                  onBlur={(e) => (e.target.style.borderColor = "#EDE0CC")}
+                />
+              </label>
               <div className="sms-notice">
                 <span className="sms-notice__icon">💬</span>
                 <span>Riceverai un <strong>codice SMS</strong> sul numero indicato per confermare l&apos;ordine.</span>

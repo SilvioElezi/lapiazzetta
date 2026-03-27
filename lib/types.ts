@@ -5,6 +5,16 @@ export type OrderItem = {
   price: number;
 };
 
+export type SizeOption    = { name: string; extra: number };
+export type IngredientOpt = { name: string; default_selected: boolean };
+export type ExtraOption   = { name: string; extra: number };
+
+export type ProductOptions = {
+  sizes?:       { enabled: boolean; items: SizeOption[] };
+  ingredients?: { enabled: boolean; items: IngredientOpt[] };
+  extras?:      { enabled: boolean; items: ExtraOption[] };
+};
+
 export type Order = {
   id: string;
   client_name: string;
@@ -29,6 +39,7 @@ export type MenuItem = {
   description?: string;
   image_url?: string;
   active: boolean;
+  options?: ProductOptions;
 };
 
 export type MenuCategory = {
