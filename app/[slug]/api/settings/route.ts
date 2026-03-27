@@ -9,7 +9,7 @@ export async function GET(
 
   const { data: business } = await supabaseAdmin
     .from("businesses")
-    .select("id")
+    .select("id, subscription_expires_at")
     .eq("slug", slug)
     .single();
 
@@ -22,7 +22,9 @@ export async function GET(
 
   if (error) return NextResponse.json({}, { status: 500 });
 
-  const result: Record<string, unknown> = {};
+  const result: Record<string, unknown> = {
+    subscription_expires_at: business.subscription_expires_at ?? null,
+  };
   for (const row of data) {
     result[row.key] = row.value;
   }

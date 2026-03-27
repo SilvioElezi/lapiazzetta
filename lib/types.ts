@@ -66,6 +66,7 @@ export type WeekHours = {
 export type Settings = {
   online_orders: boolean;
   hours: WeekHours;
+  delivery_fee?: number;
 };
 
 export type Business = {
@@ -79,4 +80,5 @@ export type Business = {
   lat?: number;
   lng?: number;
   radius_km: number;
+  subscription_expires_at?: string;
 };

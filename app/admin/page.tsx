@@ -7,7 +7,7 @@ type FormState = Omit<Business, "id"> & { id?: string };
 const EMPTY_FORM: FormState = {
   slug: "", name: "", phone: "", wa_phone: "",
   address: "", lat: undefined, lng: undefined,
-  radius_km: 5, logo_url: "",
+  radius_km: 5, logo_url: "", subscription_expires_at: "",
 };
 
 export default function AdminPage() {
@@ -172,6 +172,7 @@ export default function AdminPage() {
               <Field label="Latitudine" value={form.lat?.toString() ?? ""} onChange={(v) => setForm((f) => ({ ...f, lat: v ? parseFloat(v) : undefined }))} type="number" />
               <Field label="Longitudine" value={form.lng?.toString() ?? ""} onChange={(v) => setForm((f) => ({ ...f, lng: v ? parseFloat(v) : undefined }))} type="number" />
               <Field label="Raggio consegna (km)" value={form.radius_km.toString()} onChange={(v) => setForm((f) => ({ ...f, radius_km: parseFloat(v) || 5 }))} type="number" />
+              <Field label="Scadenza abbonamento" value={form.subscription_expires_at ? form.subscription_expires_at.slice(0, 10) : ""} onChange={(v) => setForm((f) => ({ ...f, subscription_expires_at: v || "" }))} type="date" style={{ gridColumn: "span 2" }} />
             </div>
 
             {/* Logo upload */}
@@ -221,6 +222,13 @@ export default function AdminPage() {
                     <p style={s.bizSlug}>/{b.slug}</p>
                     {b.address && <p style={s.bizDetail}>{b.address}</p>}
                     <p style={s.bizDetail}>Raggio: {b.radius_km} km{b.phone ? ` · ${b.phone}` : ""}</p>
+                    {b.subscription_expires_at && (() => {
+                      const exp = new Date(b.subscription_expires_at);
+                      const daysLeft = Math.ceil((exp.getTime() - Date.now()) / 86400000);
+                      const color = daysLeft <= 0 ? "#B03A2E" : daysLeft <= 30 ? "#8A5E12" : "#2E7D32";
+                      const label = daysLeft <= 0 ? "Abbonamento scaduto" : `Abbonamento: ${daysLeft}gg rimasti`;
+                      return <p style={{ ...s.bizDetail, color, fontWeight: 600 }}>📅 {label} ({exp.toLocaleDateString("it-IT")})</p>;
+                    })()}
                   </div>
                 </div>
                 <div style={{display:"flex",gap:6,flexShrink:0}}>

@@ -171,6 +171,7 @@ function OrdersTab({ role, slug }: { role: StaffRole; slug: string }) {
 function SettingsTab({ slug }: { slug: string }) {
   const [onlineOrders, setOnlineOrders] = useState(true);
   const [hours, setHours] = useState<WeekHours | null>(null);
+  const [deliveryFee, setDeliveryFee] = useState("0");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved]   = useState(false);
 
@@ -178,6 +179,7 @@ function SettingsTab({ slug }: { slug: string }) {
     fetch(`/${slug}/api/settings`).then((r) => r.json()).then((data) => {
       setOnlineOrders(data.online_orders ?? true);
       setHours(data.hours ?? null);
+      setDeliveryFee(data.delivery_fee != null ? String(data.delivery_fee) : "0");
     });
   }, [slug]);
 
@@ -227,6 +229,27 @@ function SettingsTab({ slug }: { slug: string }) {
             ⚠️ Gli ordini online sono disattivati. I clienti vedranno un messaggio di chiusura.
           </div>
         )}
+      </div>
+
+      <div className="settings-card">
+        <div className="settings-card__head">
+          <div>
+            <h3 className="settings-card__title">Costo di consegna</h3>
+            <p className="settings-card__sub">Aggiunto automaticamente ad ogni ordine</p>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,border:"1.5px solid #EDE0CC",borderRadius:8,padding:"6px 10px",background:"#fff"}}>
+              <span style={{fontSize:".85rem",color:"#7A7770"}}>€</span>
+              <input
+                type="number" min="0" step="0.50"
+                value={deliveryFee}
+                onChange={(e) => setDeliveryFee(e.target.value)}
+                style={{width:64,border:"none",outline:"none",fontSize:".9rem",fontFamily:"inherit",color:"#1C1C1A",background:"transparent"}}
+              />
+            </div>
+            <button className="btn-save-hours" onClick={() => saveSetting("delivery_fee", parseFloat(deliveryFee) || 0)}>Salva</button>
+          </div>
+        </div>
       </div>
 
       <div className="settings-card">
@@ -429,6 +452,23 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
     try { return JSON.parse(localStorage.getItem("shop_user") ?? "null"); } catch { return null; }
   });
   const [tab, setTab] = useState<"orders" | "menu" | "settings">("orders");
+  const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch(`/${slug}/api/settings`)
+      .then((r) => r.json())
+      .then((d) => { if (d.subscription_expires_at) setSubscriptionExpiresAt(d.subscription_expires_at); })
+      .catch(() => {});
+  }, [slug]);
+
+  const subscriptionWarning = (() => {
+    if (!subscriptionExpiresAt || !user || user.role !== "admin") return null;
+    const exp = new Date(subscriptionExpiresAt);
+    const daysLeft = Math.ceil((exp.getTime() - Date.now()) / 86400000);
+    if (daysLeft > 30) return null;
+    if (daysLeft <= 0) return { msg: "Il tuo abbonamento è scaduto. Contatta il supporto per rinnovarlo.", color: "#B03A2E", bg: "#FDECEA", border: "#F5B4AD" };
+    return { msg: `L'abbonamento scade tra ${daysLeft} giorn${daysLeft === 1 ? "o" : "i"} (${exp.toLocaleDateString("it-IT")}). Rinnova presto!`, color: "#8A5E12", bg: "#FEF3DB", border: "#F9DC7D" };
+  })();
 
   const handleLogin = (u: StaffUser) => { setUser(u); };
   const logout = () => { localStorage.removeItem("shop_user"); setUser(null); };
@@ -466,6 +506,11 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
           </nav>
         </div>
       </header>
+      {subscriptionWarning && (
+        <div style={{background:subscriptionWarning.bg,borderBottom:`1px solid ${subscriptionWarning.border}`,padding:"10px 20px",fontSize:".83rem",fontWeight:500,color:subscriptionWarning.color,textAlign:"center"}}>
+          ⚠️ {subscriptionWarning.msg}
+        </div>
+      )}
       <main className="shop__main">
         {tab === "orders"   && <OrdersTab role={user.role} slug={slug} />}
         {tab === "menu"     && user.role === "admin" && <MenuTab slug={slug} />}

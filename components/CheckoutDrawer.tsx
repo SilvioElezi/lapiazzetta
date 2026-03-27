@@ -8,10 +8,11 @@ type Step = "cart" | "form" | "confirm" | "done";
 export default function CheckoutDrawer({ business }: { business?: Business }) {
   const slug = business?.slug;
   const { cart, increase, decrease, remove, total } = useCart();
-  const [open,    setOpen]    = useState(false);
-  const [step,    setStep]    = useState<Step>("cart");
-  const [locating, setLocating] = useState(false);
+  const [open,         setOpen]        = useState(false);
+  const [step,         setStep]        = useState<Step>("cart");
+  const [locating,     setLocating]    = useState(false);
   const [onlineOrders, setOnlineOrders] = useState(true);
+  const [deliveryFee,  setDeliveryFee] = useState(0);
 
   // Form fields
   const [clientName, setClientName] = useState("");
@@ -35,7 +36,10 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
     const url = slug ? `/${slug}/api/settings` : "/api/settings";
     fetch(url)
       .then((r) => r.json())
-      .then((d) => setOnlineOrders(d.online_orders ?? true))
+      .then((d) => {
+        setOnlineOrders(d.online_orders ?? true);
+        setDeliveryFee(d.delivery_fee ? parseFloat(d.delivery_fee) || 0 : 0);
+      })
       .catch(() => {});
   }, [slug]);
 
@@ -150,7 +154,13 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
           </div>
           {cart.length > 0 && (
             <div className="drawer__foot">
-              <div className="total-row"><span>Totale</span><span className="total-amt">€{total.toFixed(2)}</span></div>
+              {deliveryFee > 0 && (
+                <div className="total-row"><span>Articoli</span><span>€{total.toFixed(2)}</span></div>
+              )}
+              {deliveryFee > 0 && (
+                <div className="total-row"><span>Consegna</span><span>€{deliveryFee.toFixed(2)}</span></div>
+              )}
+              <div className="total-row"><span>Totale</span><span className="total-amt">€{(total + deliveryFee).toFixed(2)}</span></div>
               <button className="btn-primary" onClick={() => setStep("form")}>Procedi all&apos;ordine →</button>
             </div>
           )}
@@ -192,7 +202,10 @@ export default function CheckoutDrawer({ business }: { business?: Business }) {
                 {cart.map((i: any) => (
                   <div key={i.id} className="recap__row"><span>{i.name} x{i.qty}</span><span>€{(i.price * i.qty).toFixed(2)}</span></div>
                 ))}
-                <div className="recap__total"><span>Totale</span><span>€{total.toFixed(2)}</span></div>
+                {deliveryFee > 0 && (
+                  <div className="recap__row"><span>Consegna</span><span>€{deliveryFee.toFixed(2)}</span></div>
+                )}
+                <div className="recap__total"><span>Totale</span><span>€{(total + deliveryFee).toFixed(2)}</span></div>
               </div>
             </div>
           </div>

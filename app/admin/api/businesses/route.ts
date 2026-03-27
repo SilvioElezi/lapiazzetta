@@ -17,15 +17,16 @@ export async function POST(req: NextRequest) {
   const { data, error } = await supabaseAdmin
     .from("businesses")
     .insert({
-      slug:      body.slug,
-      name:      body.name,
-      phone:     body.phone ?? null,
-      wa_phone:  body.wa_phone ?? null,
-      address:   body.address ?? null,
-      lat:       body.lat ?? null,
-      lng:       body.lng ?? null,
-      radius_km: body.radius_km ?? 5,
-      logo_url:  body.logo_url ?? null,
+      slug:                   body.slug,
+      name:                   body.name,
+      phone:                  body.phone ?? null,
+      wa_phone:               body.wa_phone ?? null,
+      address:                body.address ?? null,
+      lat:                    body.lat ?? null,
+      lng:                    body.lng ?? null,
+      radius_km:              body.radius_km ?? 5,
+      logo_url:               body.logo_url ?? null,
+      subscription_expires_at: body.subscription_expires_at ?? null,
     })
     .select()
     .single();

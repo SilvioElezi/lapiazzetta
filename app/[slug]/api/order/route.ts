@@ -57,6 +57,15 @@ export async function POST(
     }
   }
 
+  // Fetch delivery fee from settings
+  const { data: feeRow } = await supabaseAdmin
+    .from("settings")
+    .select("value")
+    .eq("business_id", business.id)
+    .eq("key", "delivery_fee")
+    .maybeSingle();
+  const deliveryFee = feeRow ? parseFloat(feeRow.value) || 0 : 0;
+
   const id  = generateId();
   const otp = generateOtp();
 
@@ -69,7 +78,7 @@ export async function POST(
     lat:          body.lat ?? null,
     lng:          body.lng ?? null,
     items:        body.items,
-    total:        body.total,
+    total:        (body.total ?? 0) + deliveryFee,
     status:       "pending",
     confirm_code: otp,
     placed_at:    new Date().toISOString(),
