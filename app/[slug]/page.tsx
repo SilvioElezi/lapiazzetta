@@ -7,6 +7,7 @@ import About from "../../components/About";
 import InfoSection from "../../components/InfoSection";
 import Footer from "../../components/Footer";
 import CheckoutDrawer from "../../components/CheckoutDrawer";
+import ConsentBanner from "../../components/ConsentBanner";
 import type { Business } from "../../lib/types";
 
 type Props = { params: Promise<{ slug: string }> };
@@ -43,6 +44,7 @@ export default async function SlugPage({ params }: Props) {
       <InfoSection business={business} />
       <Footer business={business} />
       <CheckoutDrawer business={business} />
+      <ConsentBanner />
     </main>
   );
 }
