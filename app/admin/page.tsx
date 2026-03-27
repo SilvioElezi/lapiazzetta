@@ -246,10 +246,6 @@ export default function AdminPage() {
                   {locationLabel === "Indirizzo non trovato" ? "⚠️ " : "✓ "}{locationLabel}
                 </p>
               )}
-              <div style={s.grid2}>
-                <Field label="Latitudine" value={form.lat?.toString() ?? ""} onChange={(v) => { setForm((f) => ({ ...f, lat: v ? parseFloat(v) : undefined })); setLocationLabel(""); }} type="number" />
-                <Field label="Longitudine" value={form.lng?.toString() ?? ""} onChange={(v) => { setForm((f) => ({ ...f, lng: v ? parseFloat(v) : undefined })); setLocationLabel(""); }} type="number" />
-              </div>
               {form.lat != null && form.lng != null && (
                 <a href={`https://maps.google.com/?q=${form.lat},${form.lng}`} target="_blank" rel="noopener noreferrer" style={{fontSize:".75rem",color:"#B03A2E",textDecoration:"none"}}>
                   🗺 Verifica su Google Maps
