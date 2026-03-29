@@ -30,6 +30,21 @@ export type Order = {
   order_type?: "delivery" | "kiosk";
 };
 
+export type DeliveryShift = {
+  id: string;
+  business_id: string;
+  staff_id: string;
+  staff_name: string;
+  initial_float: number;
+  total_collected: number;
+  deliveries_count: number;
+  status: "active" | "pending_handover" | "closed";
+  started_at: string;
+  closed_at?: string;
+  confirmed_at?: string;
+  confirmed_by?: string;
+};
+
 export type KioskTable = {
   id: string;
   business_id: string;

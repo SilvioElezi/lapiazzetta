@@ -1,7 +1,7 @@
 "use client";
 import { use, useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "../../../lib/supabase";
-import type { Order, MenuCategory, MenuItem, StaffUser, StaffRole, WeekHours, DayHours, KioskTable } from "../../../lib/types";
+import type { Order, OrderItem, MenuCategory, MenuItem, StaffUser, StaffRole, WeekHours, DayHours, KioskTable, DeliveryShift } from "../../../lib/types";
 
 function elapsed(iso: string) {
   const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
@@ -66,27 +66,66 @@ function LoginScreen({ onLogin, slug }: { onLogin: (user: StaffUser) => void; sl
 }
 
 // ─── ORDERS TAB ────────────────────────────────────────────
-function OrdersTab({ role, slug }: { role: StaffRole; slug: string }) {
+function OrdersTab({ role, slug, activeShift, onShiftUpdated, staffUser }: {
+  role: StaffRole;
+  slug: string;
+  activeShift?: DeliveryShift | null;
+  onShiftUpdated?: () => void;
+  staffUser?: StaffUser | null;
+}) {
   const [orders, setOrders] = useState<Order[]>([]);
   const [, setTick] = useState(0);
+  const [pendingHandovers, setPendingHandovers] = useState<DeliveryShift[]>([]);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   const fetchOrders = useCallback(async () => {
     const res = await fetch(`/${slug}/api/orders`);
     setOrders(await res.json());
   }, [slug]);
 
+  const fetchHandovers = useCallback(async () => {
+    if (role !== "reception" && role !== "admin") return;
+    const res = await fetch(`/${slug}/api/shifts?status=pending_handover`);
+    if (res.ok) setPendingHandovers(await res.json());
+  }, [slug, role]);
+
   useEffect(() => {
     fetchOrders();
+    fetchHandovers();
     const channel = supabase
       .channel(`orders-rt-${slug}`)
       .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, fetchOrders)
       .subscribe();
     const tick = setInterval(() => setTick((t) => t + 1), 30000);
     return () => { supabase.removeChannel(channel); clearInterval(tick); };
-  }, [fetchOrders, slug]);
+  }, [fetchOrders, fetchHandovers, slug]);
 
-  const markReady     = async (id: string) => { await fetch(`/${slug}/api/order/${id}`, { method: "PATCH" }); };
-  const markDelivered = async (id: string) => { await fetch(`/${slug}/api/order/${id}`, { method: "DELETE" }); };
+  const markReady = async (id: string) => { await fetch(`/${slug}/api/order/${id}`, { method: "PATCH" }); };
+
+  const markDelivered = async (id: string) => {
+    const order = orders.find((o) => o.id === id);
+    await fetch(`/${slug}/api/order/${id}`, { method: "DELETE" });
+    // Update active shift total if delivery guy is on shift
+    if (activeShift && order && order.order_type !== "kiosk") {
+      await fetch(`/${slug}/api/shifts/${activeShift.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "add_delivery", amount: order.total }),
+      });
+      onShiftUpdated?.();
+    }
+  };
+
+  const confirmHandover = async (shiftId: string) => {
+    setConfirmingId(shiftId);
+    await fetch(`/${slug}/api/shifts/${shiftId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "confirm", confirmedBy: staffUser?.name ?? "reception" }),
+    });
+    setConfirmingId(null);
+    fetchHandovers();
+  };
 
   const visible = orders.filter((o) => {
     if (role === "delivery") return o.status === "ready";
@@ -98,6 +137,26 @@ function OrdersTab({ role, slug }: { role: StaffRole; slug: string }) {
 
   return (
     <div className="tab-content">
+      {/* Pending cash handovers (reception/admin) */}
+      {pendingHandovers.map((shift) => (
+        <div key={shift.id} className="handover-banner">
+          <div>
+            <p className="handover-banner__title">💰 {shift.staff_name} ha chiuso il turno</p>
+            <p className="handover-banner__sub">
+              Fondo cassa €{shift.initial_float.toFixed(2)} + incassi €{shift.total_collected.toFixed(2)} = <strong>€{(shift.initial_float + shift.total_collected).toFixed(2)}</strong> da ritirare
+            </p>
+          </div>
+          <button
+            className="action-btn action-btn--ready"
+            onClick={() => confirmHandover(shift.id)}
+            disabled={confirmingId === shift.id}
+            style={{ whiteSpace: "nowrap", flexShrink: 0 }}
+          >
+            {confirmingId === shift.id ? "Conferma…" : "✅ Confermo incasso"}
+          </button>
+        </div>
+      ))}
+
       <div className="orders-stats">
         {role !== "delivery" && <span className="stat-pill stat-pill--new">🆕 {newOrders.length} nuovi</span>}
         <span className="stat-pill stat-pill--ready">✅ {readyOrders.length} pronti</span>
@@ -606,6 +665,547 @@ function MenuTab({ slug }: { slug: string }) {
   );
 }
 
+// ─── PLACE ORDER TAB (reception POS) ──────────────────────
+function PlaceOrderTab({ slug }: { slug: string }) {
+  const [orderType, setOrderType] = useState<"table" | "delivery">("table");
+  const [tables, setTables]       = useState<KioskTable[]>([]);
+  const [selTable, setSelTable]   = useState<KioskTable | null>(null);
+  const [menu, setMenu]           = useState<MenuCategory[]>([]);
+  const [activeCat, setActiveCat] = useState(0);
+  const [deliveryFee, setDeliveryFee] = useState(0);
+  const [cart, setCart]           = useState<OrderItem[]>([]);
+  const [clientName, setClientName] = useState("");
+  const [phone, setPhone]         = useState("");
+  const [address, setAddress]     = useState("");
+  const [notes, setNotes]         = useState("");
+  // Options popup
+  const [popupItem, setPopupItem] = useState<MenuItem | null>(null);
+  const [pSizeIdx, setPSizeIdx]   = useState<number | null>(null);
+  const [pIngr, setPIngr]         = useState<Set<string>>(new Set());
+  const [pExtras, setPExtras]     = useState<Set<string>>(new Set());
+  // Submit
+  const [sending, setSending]     = useState(false);
+  const [sentId, setSentId]       = useState<string | null>(null);
+  const [sendErr, setSendErr]     = useState("");
+
+  useEffect(() => {
+    fetch(`/${slug}/api/tables`).then((r) => r.json()).then(setTables).catch(() => {});
+    fetch(`/${slug}/api/menu`).then((r) => r.json()).then(setMenu).catch(() => {});
+    fetch(`/${slug}/api/settings`).then((r) => r.json()).then((d) => setDeliveryFee(d.delivery_fee ?? 0)).catch(() => {});
+  }, [slug]);
+
+  const cartTotal = cart.reduce((s, i) => s + i.price * i.qty, 0);
+  const cartQty   = cart.reduce((s, i) => s + i.qty, 0);
+  const grandTotal = cartTotal + (orderType === "delivery" ? deliveryFee : 0);
+
+  const addToCart = (item: OrderItem) => setCart((prev) => {
+    const ex = prev.find((i) => i.name === item.name);
+    if (ex) return prev.map((i) => i.name === item.name ? { ...i, qty: i.qty + 1 } : i);
+    return [...prev, { ...item, qty: 1 }];
+  });
+  const incCart = (name: string) => setCart((prev) => prev.map((i) => i.name === name ? { ...i, qty: i.qty + 1 } : i));
+  const decCart = (name: string) => setCart((prev) => prev.map((i) => i.name === name ? { ...i, qty: i.qty - 1 } : i).filter((i) => i.qty > 0));
+
+  const openPopup = (item: MenuItem) => {
+    const ingr = item.options?.ingredients?.enabled ? (item.options.ingredients.items ?? []) : [];
+    setPopupItem(item);
+    setPSizeIdx(null);
+    setPIngr(new Set(ingr.filter((i) => i.default_selected).map((i) => i.name)));
+    setPExtras(new Set());
+  };
+
+  const ppSizes  = popupItem?.options?.sizes?.enabled       ? (popupItem.options.sizes.items       ?? []) : [];
+  const ppIngr   = popupItem?.options?.ingredients?.enabled ? (popupItem.options.ingredients.items ?? []) : [];
+  const ppExtras = popupItem?.options?.extras?.enabled      ? (popupItem.options.extras.items      ?? []) : [];
+  const ppSzExt  = pSizeIdx !== null ? (ppSizes[pSizeIdx]?.extra ?? 0) : 0;
+  const ppExExt  = Array.from(pExtras).reduce((s, n) => s + (ppExtras.find((e) => e.name === n)?.extra ?? 0), 0);
+  const ppPrice  = (popupItem?.price ?? 0) + ppSzExt + ppExExt;
+  const ppParts: string[] = [];
+  if (pSizeIdx !== null && ppSizes[pSizeIdx]) ppParts.push(ppSizes[pSizeIdx].name);
+  ppIngr.filter((i) =>  i.default_selected && !pIngr.has(i.name)).forEach((i) => ppParts.push(`senza ${i.name}`));
+  ppIngr.filter((i) => !i.default_selected &&  pIngr.has(i.name)).forEach((i) => ppParts.push(`+ ${i.name}`));
+  Array.from(pExtras).forEach((n) => ppParts.push(`+ ${n}`));
+  const ppCartName = popupItem ? (popupItem.name + (ppParts.length ? ` · ${ppParts.join(", ")}` : "")) : "";
+  const canAddPop  = ppSizes.length === 0 || pSizeIdx !== null;
+
+  const addFromPopup = () => {
+    if (!popupItem || !canAddPop) return;
+    addToCart({ id: popupItem.id, name: ppCartName, price: ppPrice, qty: 1 });
+    setPopupItem(null);
+  };
+
+  const reset = () => {
+    setCart([]); setClientName(""); setPhone(""); setAddress(""); setNotes(""); setSelTable(null);
+  };
+
+  const canSubmit = cartQty > 0 && (
+    orderType === "table" ? !!selTable : (!!clientName.trim() && !!phone.trim() && !!address.trim())
+  );
+
+  const submitOrder = async () => {
+    if (!canSubmit || sending) return;
+    setSending(true); setSendErr("");
+    try {
+      let res: Response;
+      if (orderType === "table") {
+        res = await fetch(`/${slug}/api/kiosk-order`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tableToken: selTable!.token, clientName: clientName.trim() || "Receptionist", items: cart, total: cartTotal, notes: notes.trim() }),
+        });
+      } else {
+        res = await fetch(`/${slug}/api/reception-order`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ clientName: clientName.trim(), phone: phone.trim(), address: address.trim(), items: cart, subtotal: cartTotal, notes: notes.trim() }),
+        });
+      }
+      const data = await res.json();
+      if (data.ok) { setSentId(data.id); reset(); setTimeout(() => setSentId(null), 5000); }
+      else { setSendErr(data.error ?? "Errore nell'invio"); }
+    } catch { setSendErr("Errore di connessione"); }
+    finally { setSending(false); }
+  };
+
+  const currentCat = menu[activeCat];
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 320px", gap: 16, alignItems: "start" }}>
+      {/* ── LEFT: MENU ── */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {menu.map((cat, idx) => (
+            <button key={cat.category} onClick={() => setActiveCat(idx)}
+              style={{ padding: "7px 14px", background: activeCat === idx ? "#1C1C1A" : "#fff", color: activeCat === idx ? "#FDF6EC" : "#1C1C1A", border: "1.5px solid #EDE0CC", borderRadius: 999, fontSize: ".8rem", fontWeight: activeCat === idx ? 600 : 400, cursor: "pointer", fontFamily: "inherit" }}>
+              {cat.emoji} {cat.category}
+            </button>
+          ))}
+        </div>
+        {currentCat && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 10 }}>
+            {currentCat.items.map((item) => {
+              const qty = cart.filter((c) => c.id === item.id).reduce((s, c) => s + c.qty, 0);
+              const hasOpts = !!(item.options?.sizes?.enabled || item.options?.ingredients?.enabled || item.options?.extras?.enabled);
+              return (
+                <div key={item.id} onClick={() => hasOpts ? openPopup(item) : addToCart({ id: item.id, name: item.name, price: item.price, qty: 1 })}
+                  style={{ background: "#fff", border: qty > 0 ? "2px solid #B03A2E" : "1.5px solid #EDE0CC", borderRadius: 12, padding: 10, cursor: "pointer", display: "flex", flexDirection: "column", gap: 6, transition: "all .12s" }}>
+                  {item.image_url && <img src={item.image_url} alt={item.name} style={{ width: "100%", height: 70, objectFit: "cover", borderRadius: 7 }} />}
+                  <p style={{ fontSize: ".85rem", fontWeight: 600, color: "#1C1C1A", lineHeight: 1.3 }}>{item.name}</p>
+                  {item.ingredients && <p style={{ fontSize: ".7rem", color: "#7A7770", lineHeight: 1.3 }}>{item.ingredients}</p>}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "auto" }}>
+                    <span style={{ fontSize: ".85rem", fontWeight: 700, color: "#B03A2E" }}>€{item.price.toFixed(2)}</span>
+                    {qty > 0 ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 5 }} onClick={(e) => e.stopPropagation()}>
+                        <button onClick={() => decCart(item.name)} style={{ width: 24, height: 24, border: "none", borderRadius: "50%", background: "#F5EADA", cursor: "pointer", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                        <span style={{ fontWeight: 700, color: "#B03A2E", minWidth: 14, textAlign: "center", fontSize: ".85rem" }}>{qty}</span>
+                        <button onClick={() => hasOpts ? openPopup(item) : incCart(item.name)} style={{ width: 24, height: 24, border: "none", borderRadius: "50%", background: "#B03A2E", color: "#fff", cursor: "pointer", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: ".68rem", color: "#B0ACA5" }}>{hasOpts ? "custom" : "+ add"}</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ── RIGHT: ORDER PANEL ── */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, position: "sticky", top: 76 }}>
+        {/* Type selector */}
+        <div style={{ background: "#fff", border: "1px solid #EDE0CC", borderRadius: 12, overflow: "hidden", display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+          {(["table", "delivery"] as const).map((t) => (
+            <button key={t} onClick={() => setOrderType(t)}
+              style={{ padding: "11px", border: "none", background: orderType === t ? "#1C1C1A" : "#fff", color: orderType === t ? "#FDF6EC" : "#1C1C1A", fontWeight: 600, fontSize: ".82rem", cursor: "pointer", fontFamily: "inherit", borderRight: t === "table" ? "1px solid #EDE0CC" : "none" }}>
+              {t === "table" ? "🪑 Tavolo" : "🛵 Domicilio"}
+            </button>
+          ))}
+        </div>
+
+        {/* Customer info */}
+        <div style={{ background: "#fff", border: "1px solid #EDE0CC", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+          <p style={{ fontSize: ".72rem", fontWeight: 600, color: "#7A7770", textTransform: "uppercase", letterSpacing: ".04em" }}>{orderType === "table" ? "Selezione tavolo" : "Dati cliente"}</p>
+          {orderType === "table" ? (
+            <>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                {tables.length === 0 && <p style={{ fontSize: ".78rem", color: "#B0ACA5" }}>Nessun tavolo configurato</p>}
+                {tables.map((t) => (
+                  <button key={t.id} onClick={() => setSelTable(t)}
+                    style={{ padding: "7px 12px", border: `2px solid ${selTable?.id === t.id ? "#B03A2E" : "#EDE0CC"}`, borderRadius: 8, background: selTable?.id === t.id ? "#B03A2E" : "#fff", color: selTable?.id === t.id ? "#fff" : "#1C1C1A", fontSize: ".8rem", fontWeight: selTable?.id === t.id ? 600 : 400, cursor: "pointer", fontFamily: "inherit" }}>
+                    🪑 {t.name}
+                  </button>
+                ))}
+              </div>
+              <input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Nome cliente (opzionale)"
+                style={{ padding: "8px 10px", border: "1.5px solid #EDE0CC", borderRadius: 8, fontSize: ".83rem", fontFamily: "inherit", outline: "none" }} />
+            </>
+          ) : (
+            <>
+              <input value={clientName} onChange={(e) => setClientName(e.target.value)} placeholder="Nome *" style={{ padding: "8px 10px", border: "1.5px solid #EDE0CC", borderRadius: 8, fontSize: ".83rem", fontFamily: "inherit", outline: "none" }} />
+              <input value={phone}      onChange={(e) => setPhone(e.target.value)}      placeholder="Telefono *" style={{ padding: "8px 10px", border: "1.5px solid #EDE0CC", borderRadius: 8, fontSize: ".83rem", fontFamily: "inherit", outline: "none" }} />
+              <input value={address}   onChange={(e) => setAddress(e.target.value)}    placeholder="Indirizzo *" style={{ padding: "8px 10px", border: "1.5px solid #EDE0CC", borderRadius: 8, fontSize: ".83rem", fontFamily: "inherit", outline: "none" }} />
+            </>
+          )}
+          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Note cucina" rows={2}
+            style={{ padding: "8px 10px", border: "1.5px solid #EDE0CC", borderRadius: 8, fontSize: ".78rem", fontFamily: "inherit", outline: "none", resize: "none" }} />
+        </div>
+
+        {/* Cart */}
+        <div style={{ background: "#fff", border: "1px solid #EDE0CC", borderRadius: 12, padding: 12, display: "flex", flexDirection: "column", gap: 7 }}>
+          <p style={{ fontSize: ".72rem", fontWeight: 600, color: "#7A7770", textTransform: "uppercase", letterSpacing: ".04em" }}>Carrello</p>
+          {cart.length === 0 ? <p style={{ fontSize: ".8rem", color: "#B0ACA5", textAlign: "center", padding: "10px 0" }}>Vuoto</p> : (
+            <>
+              {cart.map((item) => (
+                <div key={item.name} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: ".8rem" }}>
+                  <span style={{ fontWeight: 700, color: "#B03A2E", minWidth: 18 }}>{item.qty}×</span>
+                  <span style={{ flex: 1, color: "#1C1C1A", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</span>
+                  <span style={{ color: "#7A7770", whiteSpace: "nowrap" }}>€{(item.price * item.qty).toFixed(2)}</span>
+                  <button onClick={() => decCart(item.name)} style={{ border: "none", background: "transparent", cursor: "pointer", color: "#B03A2E", fontSize: ".75rem", padding: "0 2px" }}>✕</button>
+                </div>
+              ))}
+              <div style={{ borderTop: "1px solid #EDE0CC", paddingTop: 7, marginTop: 3, display: "flex", flexDirection: "column", gap: 3 }}>
+                {orderType === "delivery" && deliveryFee > 0 && (
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: ".78rem", color: "#7A7770" }}>
+                    <span>+ Consegna</span><span>€{deliveryFee.toFixed(2)}</span>
+                  </div>
+                )}
+                <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: ".9rem", color: "#1C1C1A" }}>
+                  <span>Totale</span><span style={{ fontFamily: "Georgia,serif" }}>€{grandTotal.toFixed(2)}</span>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+
+        {sentId && <div style={{ background: "#EBF5EB", border: "1px solid #4CAF50", borderRadius: 10, padding: "10px 12px", fontSize: ".82rem", color: "#1B5E20", fontWeight: 500 }}>✅ Ordine #{sentId} inviato!</div>}
+        {sendErr && <div style={{ background: "#FDECEA", border: "1px solid #F5B4AD", borderRadius: 10, padding: "10px 12px", fontSize: ".8rem", color: "#B03A2E" }}>{sendErr}</div>}
+
+        <button onClick={submitOrder} disabled={!canSubmit || sending}
+          style={{ padding: "13px", background: canSubmit && !sending ? "#B03A2E" : "#B0ACA5", color: "#fff", border: "none", borderRadius: 12, fontSize: ".9rem", fontWeight: 700, cursor: canSubmit && !sending ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
+          {sending ? "Invio…" : `Invia ordine${grandTotal > 0 ? ` · €${grandTotal.toFixed(2)}` : ""}`}
+        </button>
+      </div>
+
+      {/* Options popup */}
+      {popupItem && (
+        <>
+          <div style={{ position: "fixed", inset: 0, background: "rgba(28,28,26,.6)", zIndex: 200, backdropFilter: "blur(3px)" }} onClick={() => setPopupItem(null)} />
+          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 201, background: "#fff", borderRadius: 16, width: "90%", maxWidth: 420, maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,.3)" }}>
+            {popupItem.image_url && <img src={popupItem.image_url} alt={popupItem.name} style={{ width: "100%", height: 150, objectFit: "cover", borderRadius: "16px 16px 0 0" }} />}
+            <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <div>
+                  <h3 style={{ fontFamily: "Georgia,serif", fontWeight: 700, color: "#1C1C1A", fontSize: "1rem" }}>{popupItem.name}</h3>
+                  {popupItem.ingredients && <p style={{ fontSize: ".75rem", color: "#7A7770", marginTop: 3 }}>{popupItem.ingredients}</p>}
+                </div>
+                <span style={{ fontWeight: 700, color: "#B03A2E", whiteSpace: "nowrap" }}>€{ppPrice.toFixed(2)}</span>
+              </div>
+              {ppSizes.length > 0 && (
+                <div>
+                  <p style={{ fontSize: ".75rem", fontWeight: 600, color: "#7A7770", marginBottom: 6 }}>Dimensione *</p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {ppSizes.map((s, idx) => (
+                      <button key={s.name} onClick={() => setPSizeIdx(idx)}
+                        style={{ padding: "7px 12px", border: `2px solid ${pSizeIdx === idx ? "#B03A2E" : "#EDE0CC"}`, borderRadius: 8, background: pSizeIdx === idx ? "#B03A2E" : "#fff", color: pSizeIdx === idx ? "#fff" : "#1C1C1A", fontSize: ".8rem", cursor: "pointer", fontFamily: "inherit" }}>
+                        {s.name}{s.extra > 0 ? ` +€${s.extra.toFixed(2)}` : ""}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {ppIngr.length > 0 && (
+                <div>
+                  <p style={{ fontSize: ".75rem", fontWeight: 600, color: "#7A7770", marginBottom: 6 }}>Ingredienti</p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {ppIngr.map((ingr) => {
+                      const sel = pIngr.has(ingr.name);
+                      return (
+                        <button key={ingr.name} onClick={() => setPIngr((prev) => { const s = new Set(prev); s.has(ingr.name) ? s.delete(ingr.name) : s.add(ingr.name); return s; })}
+                          style={{ padding: "6px 11px", border: `2px solid ${sel ? "#1C1C1A" : "#EDE0CC"}`, borderRadius: 8, background: sel ? "#1C1C1A" : "#fff", color: sel ? "#FDF6EC" : "#1C1C1A", fontSize: ".77rem", cursor: "pointer", fontFamily: "inherit" }}>
+                          {ingr.default_selected ? (sel ? `✓ ${ingr.name}` : `✗ ${ingr.name}`) : (sel ? `+ ${ingr.name}` : ingr.name)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              {ppExtras.length > 0 && (
+                <div>
+                  <p style={{ fontSize: ".75rem", fontWeight: 600, color: "#7A7770", marginBottom: 6 }}>Extra</p>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {ppExtras.map((extra) => {
+                      const sel = pExtras.has(extra.name);
+                      return (
+                        <button key={extra.name} onClick={() => setPExtras((prev) => { const s = new Set(prev); s.has(extra.name) ? s.delete(extra.name) : s.add(extra.name); return s; })}
+                          style={{ padding: "6px 11px", border: `2px solid ${sel ? "#B03A2E" : "#EDE0CC"}`, borderRadius: 8, background: sel ? "#B03A2E" : "#fff", color: sel ? "#fff" : "#1C1C1A", fontSize: ".77rem", cursor: "pointer", fontFamily: "inherit" }}>
+                          {sel ? "✓" : "+"} {extra.name} +€{extra.extra.toFixed(2)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setPopupItem(null)} style={{ flex: 1, padding: "11px", background: "#F5EADA", border: "none", borderRadius: 10, fontSize: ".83rem", cursor: "pointer", fontFamily: "inherit" }}>Annulla</button>
+                <button onClick={addFromPopup} disabled={!canAddPop}
+                  style={{ flex: 2, padding: "11px", background: canAddPop ? "#B03A2E" : "#B0ACA5", color: "#fff", border: "none", borderRadius: 10, fontSize: ".85rem", fontWeight: 600, cursor: canAddPop ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
+                  + Aggiungi €{ppPrice.toFixed(2)}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── SHIFT TAB (delivery) ──────────────────────────────────
+function ShiftTab({ slug, staffId, staffName }: { slug: string; staffId: string; staffName: string }) {
+  const [shift, setShift]     = useState<DeliveryShift | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [closing, setClosing] = useState(false);
+
+  const fetchShift = useCallback(async () => {
+    const res = await fetch(`/${slug}/api/shifts?staffId=${staffId}&status=active`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.length > 0) { setShift(data[0]); setLoading(false); return; }
+    }
+    // Check pending_handover too
+    const res2 = await fetch(`/${slug}/api/shifts?staffId=${staffId}&status=pending_handover`);
+    if (res2.ok) {
+      const data2 = await res2.json();
+      setShift(data2.length > 0 ? data2[0] : null);
+    } else {
+      setShift(null);
+    }
+    setLoading(false);
+  }, [slug, staffId]);
+
+  useEffect(() => { fetchShift(); }, [fetchShift]);
+
+  const closeShift = async () => {
+    if (!shift) return;
+    setClosing(true);
+    await fetch(`/${slug}/api/shifts/${shift.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "close" }),
+    });
+    setClosing(false);
+    fetchShift();
+  };
+
+  const handoverTotal = shift ? shift.initial_float + shift.total_collected : 0;
+
+  if (loading) return <div className="tab-content"><p style={{ color: "#7A7770", fontSize: ".9rem" }}>Caricamento…</p></div>;
+
+  return (
+    <div className="tab-content">
+      {!shift && (
+        <div className="empty-state">
+          <span>🛵</span>
+          <p>Nessun turno attivo</p>
+          <small>Chiedi all&apos;admin di aprire il tuo turno prima di iniziare le consegne</small>
+        </div>
+      )}
+
+      {shift?.status === "active" && (
+        <div className="settings-card">
+          <div className="settings-card__head">
+            <div>
+              <h3 className="settings-card__title">Il mio turno</h3>
+              <p className="settings-card__sub">Iniziato alle {new Date(shift.started_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}</p>
+            </div>
+            <span className="stat-pill stat-pill--ready" style={{ whiteSpace: "nowrap" }}>● Attivo</span>
+          </div>
+          <div style={{ padding: "0 20px 20px", display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))", gap: 12 }}>
+            {[
+              { label: "Fondo cassa iniziale", value: `€${shift.initial_float.toFixed(2)}`, icon: "💼" },
+              { label: "Ordini consegnati", value: String(shift.deliveries_count), icon: "🛵" },
+              { label: "Totale incassato", value: `€${shift.total_collected.toFixed(2)}`, icon: "💵" },
+              { label: "Totale da consegnare", value: `€${handoverTotal.toFixed(2)}`, icon: "💰", highlight: true },
+            ].map((stat) => (
+              <div key={stat.label} style={{ background: stat.highlight ? "#FEF3DB" : "#F5EADA", borderRadius: 10, padding: "12px 14px" }}>
+                <p style={{ fontSize: "1.3rem" }}>{stat.icon}</p>
+                <p style={{ fontSize: "1.15rem", fontWeight: 700, color: stat.highlight ? "#8A5E12" : "#1C1C1A", fontFamily: "Georgia,serif", marginTop: 4 }}>{stat.value}</p>
+                <p style={{ fontSize: ".72rem", color: "#7A7770", marginTop: 2 }}>{stat.label}</p>
+              </div>
+            ))}
+          </div>
+          <div style={{ padding: "0 20px 20px" }}>
+            <button onClick={closeShift} disabled={closing}
+              style={{ padding: "12px 24px", background: "#1C1C1A", color: "#FDF6EC", border: "none", borderRadius: 10, fontSize: ".88rem", fontWeight: 600, cursor: closing ? "wait" : "pointer", fontFamily: "inherit" }}>
+              {closing ? "Chiusura…" : "🔒 Chiudi turno"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {shift?.status === "pending_handover" && (
+        <div className="settings-card">
+          <div className="settings-card__head">
+            <div>
+              <h3 className="settings-card__title">Turno chiuso — consegna il denaro</h3>
+              <p className="settings-card__sub">Porta questo importo alla receptionist o all&apos;admin</p>
+            </div>
+          </div>
+          <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ background: "#FEF3DB", borderRadius: 12, padding: "20px 24px", textAlign: "center" }}>
+              <p style={{ fontSize: ".85rem", color: "#8A5E12", marginBottom: 8 }}>Importo totale da consegnare</p>
+              <p style={{ fontFamily: "Georgia,serif", fontSize: "2.5rem", fontWeight: 700, color: "#8A5E12" }}>€{handoverTotal.toFixed(2)}</p>
+              <p style={{ fontSize: ".75rem", color: "#B0ACA5", marginTop: 8 }}>Fondo cassa €{shift.initial_float.toFixed(2)} + incassi €{shift.total_collected.toFixed(2)}</p>
+            </div>
+            <p style={{ fontSize: ".82rem", color: "#7A7770" }}>La receptionist confermerà la ricezione e il tuo turno verrà chiuso.</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── ADMIN SHIFTS TAB ─────────────────────────────────────
+function AdminShiftsTab({ slug }: { slug: string }) {
+  const [shifts, setShifts]         = useState<DeliveryShift[]>([]);
+  const [deliveryStaff, setDeliveryStaff] = useState<{ id: string; name: string }[]>([]);
+  const [selStaff, setSelStaff]     = useState<string>("");
+  const [selStaffName, setSelStaffName] = useState<string>("");
+  const [initFloat, setInitFloat]   = useState("20");
+  const [creating, setCreating]     = useState(false);
+  const [createErr, setCreateErr]   = useState("");
+
+  const fetchAll = useCallback(async () => {
+    const [s, d] = await Promise.all([
+      fetch(`/${slug}/api/shifts`).then((r) => r.json()),
+      fetch(`/${slug}/api/staff?role=delivery`).then((r) => r.json()),
+    ]);
+    setShifts(s);
+    setDeliveryStaff(d);
+    if (d.length > 0 && !selStaff) { setSelStaff(String(d[0].id)); setSelStaffName(d[0].name); }
+  }, [slug, selStaff]);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  const createShift = async () => {
+    if (!selStaff) return;
+    setCreating(true); setCreateErr("");
+    const res = await fetch(`/${slug}/api/shifts`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ staffId: selStaff, staffName: selStaffName, initialFloat: parseFloat(initFloat) || 0 }),
+    });
+    const data = await res.json();
+    if (data.error) { setCreateErr(data.error); }
+    else { fetchAll(); }
+    setCreating(false);
+  };
+
+  const confirmHandover = async (id: string) => {
+    await fetch(`/${slug}/api/shifts/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "confirm", confirmedBy: "admin" }),
+    });
+    fetchAll();
+  };
+
+  const active  = shifts.filter((s) => s.status === "active");
+  const pending = shifts.filter((s) => s.status === "pending_handover");
+  const closed  = shifts.filter((s) => s.status === "closed").slice(0, 10);
+
+  return (
+    <div className="tab-content">
+      {/* Create shift */}
+      <div className="settings-card">
+        <div className="settings-card__head">
+          <div>
+            <h3 className="settings-card__title">Apri turno fattorino</h3>
+            <p className="settings-card__sub">Assegna il fondo cassa iniziale per le monete da resto</p>
+          </div>
+        </div>
+        <div style={{ padding: "12px 20px 16px", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <select value={selStaff} onChange={(e) => { setSelStaff(e.target.value); setSelStaffName(e.target.selectedOptions[0]?.text ?? ""); }}
+            style={{ flex: 1, minWidth: 160, padding: "9px 12px", border: "1.5px solid #EDE0CC", borderRadius: 8, fontSize: ".88rem", fontFamily: "inherit", outline: "none", background: "#fff" }}>
+            {deliveryStaff.length === 0 && <option value="">Nessun fattorino</option>}
+            {deliveryStaff.map((s) => <option key={s.id} value={String(s.id)}>{s.name}</option>)}
+          </select>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, border: "1.5px solid #EDE0CC", borderRadius: 8, padding: "6px 10px", background: "#fff" }}>
+            <span style={{ fontSize: ".82rem", color: "#7A7770" }}>€</span>
+            <input type="number" min="0" step="0.5" value={initFloat} onChange={(e) => setInitFloat(e.target.value)}
+              style={{ width: 60, border: "none", outline: "none", fontSize: ".88rem", fontFamily: "inherit" }} />
+            <span style={{ fontSize: ".72rem", color: "#B0ACA5" }}>fondo</span>
+          </div>
+          <button onClick={createShift} disabled={creating || !selStaff} className="btn-save-hours">
+            {creating ? "Apertura…" : "▶ Apri turno"}
+          </button>
+          {createErr && <p style={{ color: "#B03A2E", fontSize: ".8rem", width: "100%" }}>{createErr}</p>}
+        </div>
+      </div>
+
+      {/* Active shifts */}
+      {active.length > 0 && (
+        <div className="settings-card">
+          <div className="settings-card__head"><div><h3 className="settings-card__title">Turni attivi</h3></div></div>
+          <div style={{ padding: "0 20px 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+            {active.map((s) => (
+              <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid #F5EADA", flexWrap: "wrap", gap: 8 }}>
+                <div>
+                  <p style={{ fontWeight: 600, color: "#1C1C1A", fontSize: ".9rem" }}>🛵 {s.staff_name}</p>
+                  <p style={{ fontSize: ".75rem", color: "#7A7770" }}>
+                    Iniziato {new Date(s.started_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })} · {s.deliveries_count} consegne · incassato €{s.total_collected.toFixed(2)} · fondo €{s.initial_float.toFixed(2)}
+                  </p>
+                </div>
+                <span className="stat-pill stat-pill--ready">● Attivo</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Pending handovers */}
+      {pending.map((s) => (
+        <div key={s.id} className="handover-banner">
+          <div>
+            <p className="handover-banner__title">💰 {s.staff_name} — turno da chiudere</p>
+            <p className="handover-banner__sub">
+              Fondo €{s.initial_float.toFixed(2)} + incassi €{s.total_collected.toFixed(2)} = <strong>€{(s.initial_float + s.total_collected).toFixed(2)}</strong>
+            </p>
+          </div>
+          <button className="action-btn action-btn--ready" onClick={() => confirmHandover(s.id)} style={{ whiteSpace: "nowrap", flexShrink: 0 }}>
+            ✅ Confermo ricevuto
+          </button>
+        </div>
+      ))}
+
+      {/* Recent closed shifts */}
+      {closed.length > 0 && (
+        <div className="settings-card">
+          <div className="settings-card__head"><div><h3 className="settings-card__title">Turni recenti chiusi</h3></div></div>
+          <div style={{ padding: "0 20px 16px", display: "flex", flexDirection: "column", gap: 6 }}>
+            {closed.map((s) => (
+              <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid #F5EADA", flexWrap: "wrap", gap: 6 }}>
+                <div>
+                  <p style={{ fontWeight: 500, color: "#1C1C1A", fontSize: ".85rem" }}>{s.staff_name}</p>
+                  <p style={{ fontSize: ".72rem", color: "#7A7770" }}>
+                    {new Date(s.started_at).toLocaleDateString("it-IT")} · {s.deliveries_count} consegne · €{(s.initial_float + s.total_collected).toFixed(2)} totale
+                  </p>
+                </div>
+                <span style={{ fontSize: ".72rem", color: "#7A7770" }}>Conf. {s.confirmed_by}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {active.length === 0 && pending.length === 0 && closed.length === 0 && (
+        <div className="empty-state"><span>🛵</span><p>Nessun turno</p><small>Apri il primo turno per un fattorino</small></div>
+      )}
+    </div>
+  );
+}
+
 // ─── QR CODE CANVAS ────────────────────────────────────────
 function QrCodeCanvas({ value }: { value: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -726,9 +1326,10 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
       if (stored) setUser(JSON.parse(stored));
     } catch {}
   }, []);
-  const [tab, setTab] = useState<"orders" | "menu" | "settings" | "tables">("orders");
+  const [tab, setTab] = useState<"orders" | "menu" | "settings" | "tables" | "place-order" | "shift" | "shifts">("orders");
   const [activeSlug, setActiveSlug] = useState(urlSlug);
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(null);
+  const [activeShift, setActiveShift] = useState<DeliveryShift | null>(null);
 
   useEffect(() => {
     fetch(`/${activeSlug}/api/settings`)
@@ -736,6 +1337,17 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
       .then((d) => { if (d.subscription_expires_at) setSubscriptionExpiresAt(d.subscription_expires_at); })
       .catch(() => {});
   }, [activeSlug]);
+
+  const fetchActiveShift = useCallback(async () => {
+    if (!user || user.role !== "delivery") return;
+    const res = await fetch(`/${activeSlug}/api/shifts?staffId=${user.id}&status=active`);
+    if (res.ok) {
+      const data = await res.json();
+      setActiveShift(data.length > 0 ? data[0] : null);
+    }
+  }, [activeSlug, user]);
+
+  useEffect(() => { fetchActiveShift(); }, [fetchActiveShift]);
 
   const subscriptionWarning = (() => {
     if (!subscriptionExpiresAt || !user || user.role !== "admin") return null;
@@ -751,12 +1363,13 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
     setActiveSlug(urlSlug);
     setTab("orders");
   };
-  const logout = () => { localStorage.removeItem("shop_user"); setUser(null); };
+  const logout = () => { localStorage.removeItem("shop_user"); setUser(null); setActiveShift(null); };
 
   const switchBusiness = (s: string) => {
     setActiveSlug(s);
     setTab("orders");
     setSubscriptionExpiresAt(null);
+    setActiveShift(null);
   };
 
   if (!user) return (
@@ -786,8 +1399,15 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
           </div>
           <nav className="shop__tabs">
             <button className={`shop__tab${tab === "orders" ? " shop__tab--active" : ""}`} onClick={() => setTab("orders")}>📋 Ordini</button>
+            {user.role === "delivery" && (
+              <button className={`shop__tab${tab === "shift" ? " shop__tab--active" : ""}`} onClick={() => setTab("shift")}>🛵 Turno</button>
+            )}
+            {(user.role === "reception" || user.role === "admin") && (
+              <button className={`shop__tab${tab === "place-order" ? " shop__tab--active" : ""}`} onClick={() => setTab("place-order")}>🧾 Nuovo ordine</button>
+            )}
             {user.role === "admin" && (
               <>
+                <button className={`shop__tab${tab === "shifts" ? " shop__tab--active" : ""}`} onClick={() => setTab("shifts")}>🛵 Turni</button>
                 <button className={`shop__tab${tab === "menu" ? " shop__tab--active" : ""}`} onClick={() => setTab("menu")}>🍕 Menu</button>
                 <button className={`shop__tab${tab === "tables" ? " shop__tab--active" : ""}`} onClick={() => setTab("tables")}>🪑 Tavoli</button>
                 <button className={`shop__tab${tab === "settings" ? " shop__tab--active" : ""}`} onClick={() => setTab("settings")}>⚙️ Impostazioni</button>
@@ -816,10 +1436,13 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         </div>
       )}
       <main className="shop__main">
-        {tab === "orders"   && <OrdersTab role={user.role} slug={activeSlug} />}
-        {tab === "menu"     && user.role === "admin" && <MenuTab slug={activeSlug} />}
-        {tab === "tables"   && user.role === "admin" && <TablesTab slug={activeSlug} />}
-        {tab === "settings" && user.role === "admin" && <SettingsTab slug={activeSlug} />}
+        {tab === "orders"      && <OrdersTab role={user.role} slug={activeSlug} activeShift={activeShift} onShiftUpdated={fetchActiveShift} staffUser={user} />}
+        {tab === "place-order" && (user.role === "reception" || user.role === "admin") && <PlaceOrderTab slug={activeSlug} />}
+        {tab === "shift"       && user.role === "delivery" && <ShiftTab slug={activeSlug} staffId={String(user.id)} staffName={user.name} />}
+        {tab === "shifts"      && user.role === "admin" && <AdminShiftsTab slug={activeSlug} />}
+        {tab === "menu"        && user.role === "admin" && <MenuTab slug={activeSlug} />}
+        {tab === "tables"      && user.role === "admin" && <TablesTab slug={activeSlug} />}
+        {tab === "settings"    && user.role === "admin" && <SettingsTab slug={activeSlug} />}
       </main>
       <style>{styles}</style>
     </div>
@@ -979,4 +1602,7 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA;min-height:100vh}
 .opt-item-default input{width:14px;height:14px;accent-color:#B03A2E;cursor:pointer}
 .opt-add-btn{background:transparent;border:1px dashed #EDE0CC;border-radius:6px;padding:5px 10px;font-size:.78rem;color:#7A7770;cursor:pointer;font-family:inherit;transition:border-color .15s,color .15s;text-align:left;width:fit-content}
 .opt-add-btn:hover{border-color:#B03A2E;color:#B03A2E}
+.handover-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;background:#FEF3DB;border:1.5px solid #F9DC7D;border-radius:12px;flex-wrap:wrap}
+.handover-banner__title{font-size:.9rem;font-weight:600;color:#8A5E12;margin-bottom:3px}
+.handover-banner__sub{font-size:.8rem;color:#8A5E12}
 `;
