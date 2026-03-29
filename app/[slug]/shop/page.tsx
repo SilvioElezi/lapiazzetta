@@ -1,7 +1,7 @@
 "use client";
-import { use, useEffect, useState, useCallback } from "react";
+import { use, useEffect, useState, useCallback, useRef } from "react";
 import { supabase } from "../../../lib/supabase";
-import type { Order, MenuCategory, MenuItem, StaffUser, StaffRole, WeekHours, DayHours } from "../../../lib/types";
+import type { Order, MenuCategory, MenuItem, StaffUser, StaffRole, WeekHours, DayHours, KioskTable } from "../../../lib/types";
 
 function elapsed(iso: string) {
   const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
@@ -113,21 +113,30 @@ function OrdersTab({ role, slug }: { role: StaffRole; slug: string }) {
       ) : (
         <div className="orders-grid">
           {visible.map((order) => (
-            <div key={order.id} className={`order-card${order.status === "ready" ? " order-card--ready" : ""}`}>
+            <div key={order.id} className={`order-card${order.status === "ready" ? " order-card--ready" : ""}${order.order_type === "kiosk" ? " order-card--kiosk" : ""}`}>
               <div className="order-card__head">
                 <div>
                   <span className="order-id">#{order.id}</span>
                   <span className={`status-badge${order.status === "ready" ? " status-badge--ready" : ""}`}>
-                    {order.status === "new" ? "Nuovo" : "Pronto 🛵"}
+                    {order.status === "new" ? "Nuovo" : "Pronto"}
                   </span>
+                  {order.order_type === "kiosk" && (
+                    <span className="kiosk-badge">🪑 Kiosk</span>
+                  )}
                 </div>
                 <span className="order-time">{elapsed(order.placed_at)}</span>
               </div>
               <div className="order-client">
                 <p className="order-client__name">{order.client_name}</p>
-                <a href={`tel:${order.phone}`} className="order-client__link">📞 {order.phone}</a>
-                <a href={order.lat ? `https://maps.google.com/?q=${order.lat},${order.lng}` : `https://maps.google.com/?q=${encodeURIComponent(order.address)}`}
-                  target="_blank" rel="noopener noreferrer" className="order-client__link">📍 {order.address}</a>
+                {order.order_type === "kiosk" ? (
+                  <span className="order-client__table">🪑 {order.table_name}</span>
+                ) : (
+                  <>
+                    {order.phone && <a href={`tel:${order.phone}`} className="order-client__link">📞 {order.phone}</a>}
+                    <a href={order.lat ? `https://maps.google.com/?q=${order.lat},${order.lng}` : `https://maps.google.com/?q=${encodeURIComponent(order.address)}`}
+                      target="_blank" rel="noopener noreferrer" className="order-client__link">📍 {order.address}</a>
+                  </>
+                )}
               </div>
               <ul className="order-items">
                 {order.items.filter((it) => it.id !== "_notes_").map((item) => (
@@ -156,7 +165,7 @@ function OrdersTab({ role, slug }: { role: StaffRole; slug: string }) {
                 )}
                 {order.status === "ready" && role !== "reception" && (
                   <button className="action-btn action-btn--delivered" onClick={() => markDelivered(order.id)}>
-                    🛵 Consegnato
+                    {order.order_type === "kiosk" ? "🪑 Servito al tavolo" : "🛵 Consegnato"}
                   </button>
                 )}
                 {order.status === "ready" && role === "admin" && (
@@ -597,6 +606,114 @@ function MenuTab({ slug }: { slug: string }) {
   );
 }
 
+// ─── QR CODE CANVAS ────────────────────────────────────────
+function QrCodeCanvas({ value }: { value: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    import("qrcode").then((QRCode) => {
+      QRCode.toCanvas(canvasRef.current!, value, {
+        width: 180,
+        margin: 2,
+        color: { dark: "#1C1C1A", light: "#FFFFFF" },
+      });
+    });
+  }, [value]);
+  return <canvas ref={canvasRef} style={{ borderRadius: 8, display: "block" }} />;
+}
+
+// ─── TABLES TAB ────────────────────────────────────────────
+function TablesTab({ slug }: { slug: string }) {
+  const [tables, setTables]         = useState<KioskTable[]>([]);
+  const [newName, setNewName]       = useState("");
+  const [adding, setAdding]         = useState(false);
+  const [origin, setOrigin]         = useState("");
+
+  useEffect(() => {
+    setOrigin(window.location.origin);
+    fetch(`/${slug}/api/tables`).then((r) => r.json()).then(setTables).catch(() => {});
+  }, [slug]);
+
+  const addTable = async () => {
+    if (!newName.trim()) return;
+    setAdding(true);
+    try {
+      const res = await fetch(`/${slug}/api/tables`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: newName.trim() }),
+      });
+      const data = await res.json();
+      if (data.id) { setTables((prev) => [...prev, data]); setNewName(""); }
+    } finally { setAdding(false); }
+  };
+
+  const deleteTable = async (id: string) => {
+    if (!confirm("Eliminare questo tavolo? Il QR code non funzionerà più.")) return;
+    await fetch(`/${slug}/api/tables/${id}`, { method: "DELETE" });
+    setTables((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  return (
+    <div className="tab-content">
+      <div className="settings-card">
+        <div className="settings-card__head">
+          <div>
+            <h3 className="settings-card__title">Aggiungi tavolo</h3>
+            <p className="settings-card__sub">Ogni tavolo ottiene un QR code univoco per il kiosk</p>
+          </div>
+        </div>
+        <div style={{ padding: "12px 20px 16px", display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addTable()}
+            placeholder="Es. Tavolo 1, Bancone, Terrazza…"
+            style={{ flex: 1, minWidth: 200, padding: "9px 14px", border: "1.5px solid #EDE0CC", borderRadius: 8, fontSize: ".9rem", fontFamily: "inherit", outline: "none" }}
+          />
+          <button onClick={addTable} disabled={adding || !newName.trim()} className="btn-save-hours">
+            {adding ? "Aggiunta…" : "+ Aggiungi tavolo"}
+          </button>
+        </div>
+      </div>
+
+      {tables.length === 0 ? (
+        <div className="empty-state">
+          <span>🪑</span>
+          <p>Nessun tavolo configurato</p>
+          <small>Aggiungi i tavoli per generare i QR code del kiosk</small>
+        </div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(260px,1fr))", gap: 16 }}>
+          {tables.map((table) => {
+            const kioskUrl = `${origin}/${slug}/kiosk?table=${table.token}`;
+            return (
+              <div key={table.id} style={{ background: "#fff", border: "1px solid #EDE0CC", borderRadius: 16, padding: 20, display: "flex", flexDirection: "column", gap: 14, alignItems: "center", boxShadow: "0 2px 12px rgba(28,28,26,.07)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%" }}>
+                  <div>
+                    <p style={{ fontFamily: "Georgia,serif", fontSize: "1rem", fontWeight: 700, color: "#1C1C1A" }}>🪑 {table.name}</p>
+                    <p style={{ fontSize: ".68rem", color: "#B0ACA5", marginTop: 2, fontFamily: "monospace" }}>{table.token.slice(0, 16)}…</p>
+                  </div>
+                  <button onClick={() => deleteTable(table.id)}
+                    style={{ padding: "6px 10px", background: "transparent", border: "1px solid #FFCDD2", borderRadius: 8, fontSize: ".75rem", cursor: "pointer", color: "#B71C1C" }}>
+                    🗑 Elimina
+                  </button>
+                </div>
+                {origin && <QrCodeCanvas value={kioskUrl} />}
+                <p style={{ fontSize: ".7rem", color: "#7A7770", textAlign: "center", wordBreak: "break-all", lineHeight: 1.4, width: "100%" }}>{kioskUrl}</p>
+                <button onClick={() => navigator.clipboard.writeText(kioskUrl)}
+                  style={{ width: "100%", padding: "8px", background: "#F5EADA", border: "1px solid #EDE0CC", borderRadius: 8, fontSize: ".82rem", cursor: "pointer", color: "#3A3A36", fontFamily: "inherit" }}>
+                  📋 Copia link
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── ROOT PAGE ──────────────────────────────────────────────
 export default function ShopPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug: urlSlug } = use(params);
@@ -609,7 +726,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
       if (stored) setUser(JSON.parse(stored));
     } catch {}
   }, []);
-  const [tab, setTab] = useState<"orders" | "menu" | "settings">("orders");
+  const [tab, setTab] = useState<"orders" | "menu" | "settings" | "tables">("orders");
   const [activeSlug, setActiveSlug] = useState(urlSlug);
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(null);
 
@@ -672,6 +789,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
             {user.role === "admin" && (
               <>
                 <button className={`shop__tab${tab === "menu" ? " shop__tab--active" : ""}`} onClick={() => setTab("menu")}>🍕 Menu</button>
+                <button className={`shop__tab${tab === "tables" ? " shop__tab--active" : ""}`} onClick={() => setTab("tables")}>🪑 Tavoli</button>
                 <button className={`shop__tab${tab === "settings" ? " shop__tab--active" : ""}`} onClick={() => setTab("settings")}>⚙️ Impostazioni</button>
               </>
             )}
@@ -700,6 +818,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
       <main className="shop__main">
         {tab === "orders"   && <OrdersTab role={user.role} slug={activeSlug} />}
         {tab === "menu"     && user.role === "admin" && <MenuTab slug={activeSlug} />}
+        {tab === "tables"   && user.role === "admin" && <TablesTab slug={activeSlug} />}
         {tab === "settings" && user.role === "admin" && <SettingsTab slug={activeSlug} />}
       </main>
       <style>{styles}</style>
@@ -842,6 +961,9 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA;min-height:100vh}
 .btn-save-modal{padding:9px 18px;background:#B03A2E;color:#fff;border:none;border-radius:8px;font-size:.85rem;font-weight:500;cursor:pointer}
 .btn-save-modal:disabled{opacity:.5;cursor:not-allowed}
 .order-notes{display:flex;gap:6px;align-items:flex-start;padding:8px 10px;background:#FFFDE7;border:1px solid #FFE082;border-radius:8px;font-size:.83rem;color:#5D4037;line-height:1.4}
+.order-card--kiosk{border-left:4px solid #1565C0}
+.kiosk-badge{font-size:.62rem;font-weight:700;padding:2px 7px;border-radius:999px;background:#E3F2FD;color:#1565C0;margin-left:5px;vertical-align:middle}
+.order-client__table{font-size:.88rem;font-weight:600;color:#1565C0}
 .opt-section{margin-top:10px;background:#F9F5EE;border:1px solid #EDE0CC;border-radius:8px;padding:10px 12px}
 .opt-section__toggle{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.88rem;font-weight:500;color:#1C1C1A}
 .opt-section__toggle input{width:16px;height:16px;accent-color:#B03A2E;cursor:pointer;flex-shrink:0}

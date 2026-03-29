@@ -26,6 +26,17 @@ export type Order = {
   total: number;
   status: "new" | "ready";
   placed_at: string;
+  table_name?: string;
+  order_type?: "delivery" | "kiosk";
+};
+
+export type KioskTable = {
+  id: string;
+  business_id: string;
+  name: string;
+  token: string;
+  active: boolean;
+  created_at: string;
 };
 
 export type MenuItem = {
