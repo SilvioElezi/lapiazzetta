@@ -450,7 +450,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
       fetch(`/${slug}/api/tables`),
       fetch(`/${slug}/api/pos/invoices`),
     ]);
-    if (tRes.ok) { const d = await tRes.json(); setTables(d.tables ?? []); }
+    if (tRes.ok) { const d = await tRes.json(); setTables(Array.isArray(d) ? d : (d.tables ?? [])); }
     if (iRes.ok) { const d = await iRes.json(); setOpenInvoices(d.invoices ?? []); }
   }, [slug]);
 
