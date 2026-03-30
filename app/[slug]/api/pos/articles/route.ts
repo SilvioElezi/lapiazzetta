@@ -84,13 +84,26 @@ export async function GET(
   const menuCatSection: Record<string, string> = {};
 
   try {
-    const { data: menuCats, error: mErr } = await supabaseAdmin
+    // Try with main_category; if column doesn't exist yet, fall back gracefully
+    let menuCats: Array<{ category: string; items: unknown; main_category?: string | null }> | null = null;
+    const r1 = await supabaseAdmin
       .from("menu")
       .select("category, items, main_category")
       .eq("business_id", bid)
       .order("sort_order", { ascending: true });
 
-    menuErr = mErr?.message ?? null;
+    if (r1.error) {
+      // Likely column doesn't exist yet — retry without it
+      const r2 = await supabaseAdmin
+        .from("menu")
+        .select("category, items")
+        .eq("business_id", bid)
+        .order("sort_order", { ascending: true });
+      menuCats = (r2.data ?? []) as typeof menuCats;
+      menuErr = r2.error?.message ?? null;
+    } else {
+      menuCats = (r1.data ?? []) as typeof menuCats;
+    }
 
     for (const cat of menuCats || []) {
       const section = (cat.main_category as string | null) ?? sectionsConfig.find(s => s.name !== "Bar")?.name ?? "Pizzeria";
