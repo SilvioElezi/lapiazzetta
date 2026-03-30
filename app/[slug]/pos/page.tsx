@@ -100,19 +100,22 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
   }, [slug]);
 
   const loadArticles = useCallback(async () => {
-    const res = await fetch(`/${slug}/api/pos/articles`);
-    const d = await res.json();
-    if (!res.ok) {
-      setArticleError(d.error ?? "Errore caricamento articoli");
-      return;
-    }
-    setArticles(d.articles ?? []);
-    setCategories(d.categories ?? []);
-    // Show debug info if both sources returned 0 items
-    if ((d.debug?.barpro_count ?? 0) === 0 && (d.debug?.menu_count ?? 0) === 0) {
-      setArticleError(`Nessun articolo trovato. Debug: ${JSON.stringify(d.debug)}`);
-    } else {
-      setArticleError(null);
+    try {
+      const res = await fetch(`/${slug}/api/pos/articles`);
+      const d = await res.json();
+      if (!res.ok) {
+        setArticleError(d.error ?? "Errore caricamento articoli");
+        return;
+      }
+      setArticles(d.articles ?? []);
+      setCategories(d.categories ?? []);
+      if ((d.debug?.barpro_count ?? 0) === 0 && (d.debug?.menu_count ?? 0) === 0) {
+        setArticleError(`Nessun articolo trovato. Debug: ${JSON.stringify(d.debug)}`);
+      } else {
+        setArticleError(null);
+      }
+    } catch (e) {
+      setArticleError(`Errore fetch articoli: ${String(e)}`);
     }
   }, [slug]);
 
@@ -214,6 +217,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
           {selTable && <span style={{ color:"#22c55e", marginLeft:12 }}>› {selTable.name}</span>}
         </span>
         <span style={{ color:"#64748b", fontSize:13 }}>{user.name}</span>
+        {articles.length > 0 && <span style={{ color:"#4ade80", fontSize:11 }}>{articles.length} articoli</span>}
         <a href={`/${slug}/shop`} style={{ color:"#64748b", fontSize:12, textDecoration:"none", border:"1px solid #334155", borderRadius:6, padding:"4px 10px" }}>Dashboard</a>
         <button onClick={() => { localStorage.removeItem("shop_user"); setUser(null); }}
           style={{ background:"none", border:"1px solid #334155", color:"#94a3b8", borderRadius:6, padding:"4px 10px", cursor:"pointer", fontSize:12 }}>
