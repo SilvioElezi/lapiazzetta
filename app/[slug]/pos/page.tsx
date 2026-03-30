@@ -178,6 +178,9 @@ function OrdersTab({ role, slug, activeShift, onShiftUpdated, staffUser }: {
 }
 
 // ─── SETTINGS TAB ─────────────────────────────────────────────────────────────
+type StaffMember = { id: number; name: string; username: string; role: string; display_role: string | null; active: boolean };
+type StaffDraft = { name: string; username: string; password: string; role: string; display_role: string };
+
 function SettingsTab({ slug }: { slug: string }) {
   const [onlineOrders, setOnlineOrders] = useState(true);
   const [hours, setHours]               = useState<WeekHours>(DEFAULT_HOURS);
@@ -188,7 +191,49 @@ function SettingsTab({ slug }: { slug: string }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved]   = useState(false);
   const [origin, setOrigin] = useState("");
+
+  // Staff management
+  const [staffList,    setStaffList]    = useState<StaffMember[]>([]);
+  const [staffModal,   setStaffModal]   = useState<"new" | number | null>(null); // null=closed, "new"=create, number=editing id
+  const [staffDraft,   setStaffDraft]   = useState<StaffDraft>({ name:"", username:"", password:"", role:"reception", display_role:"" });
+  const [staffSaving,  setStaffSaving]  = useState(false);
+  const [staffErr,     setStaffErr]     = useState("");
+  const [showInactive, setShowInactive] = useState(false);
+
+  const loadStaff = useCallback(async () => {
+    const r = await fetch(`/${slug}/api/staff`);
+    if (r.ok) setStaffList(await r.json());
+  }, [slug]);
+
+  const blankDraftStaff = (): StaffDraft => ({ name:"", username:"", password:"", role:"reception", display_role:"" });
+
+  const openStaffNew = () => { setStaffDraft(blankDraftStaff()); setStaffErr(""); setStaffModal("new"); };
+  const openStaffEdit = (s: StaffMember) => {
+    setStaffDraft({ name: s.name, username: s.username, password:"", role: s.role, display_role: s.display_role ?? "" });
+    setStaffErr(""); setStaffModal(s.id);
+  };
+
+  const saveStaff = async () => {
+    if (!staffDraft.name.trim() || !staffDraft.username.trim()) { setStaffErr("Nome e username obbligatori"); return; }
+    if (staffModal === "new" && !staffDraft.password.trim()) { setStaffErr("Password obbligatoria per nuovo utente"); return; }
+    setStaffSaving(true); setStaffErr("");
+    const body = JSON.stringify({ ...staffDraft, id: staffModal !== "new" ? staffModal : undefined });
+    const url = `/${slug}/api/staff`;
+    const method = staffModal === "new" ? "POST" : "PATCH";
+    const r = await fetch(url, { method, headers:{"Content-Type":"application/json"}, body });
+    const d = await r.json();
+    setStaffSaving(false);
+    if (!r.ok) { setStaffErr(d.error ?? "Errore"); return; }
+    await loadStaff();
+    setStaffModal(null);
+  };
+
+  const toggleStaffActive = async (s: StaffMember) => {
+    setStaffList(prev => prev.map(x => x.id === s.id ? { ...x, active: !x.active } : x));
+    await fetch(`/${slug}/api/staff`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ id: s.id, active: !s.active }) });
+  };
   useEffect(() => { setOrigin(window.location.origin); }, []);
+  useEffect(() => { loadStaff(); }, [loadStaff]);
   useEffect(() => {
     fetch(`/${slug}/api/settings`).then((r) => r.json()).then((data) => {
       setOnlineOrders(data.online_orders ?? true);
@@ -316,6 +361,96 @@ function SettingsTab({ slug }: { slug: string }) {
           <button className="btn-save-hours" style={{alignSelf:"flex-start"}} onClick={()=>saveSetting("sections",sections)}>💾 Salva sezioni</button>
         </div>
       </div>
+
+      {/* ── Staff management ── */}
+      <div className="settings-card">
+        <div className="settings-card__head">
+          <div><h3 className="settings-card__title">👥 Personale</h3><p className="settings-card__sub">Gestisci utenti, ruoli e accessi</p></div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <label style={{display:"flex",alignItems:"center",gap:6,fontSize:".78rem",color:"#7A7770",cursor:"pointer"}}>
+              <input type="checkbox" checked={showInactive} onChange={e=>setShowInactive(e.target.checked)} style={{accentColor:"#B03A2E"}}/>
+              Mostra disattivi
+            </label>
+            <button className="btn-save-hours" onClick={openStaffNew}>+ Nuovo</button>
+          </div>
+        </div>
+        <div style={{padding:"8px 20px 16px",display:"flex",flexDirection:"column",gap:6}}>
+          {staffList.filter(s => showInactive || s.active).map(s => (
+            <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",background: s.active ? "#F5EADA" : "#F0F0EE",borderRadius:8,border:"1px solid #EDE0CC",opacity: s.active ? 1 : 0.6}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:".9rem",fontWeight:600,color:"#1C1C1A"}}>{s.name}</span>
+                  <span style={{fontSize:".7rem",padding:"2px 8px",borderRadius:999,background: s.role==="admin"?"#B03A2E": s.role==="reception"?"#2E6CB0":"#2E8B57",color:"#fff",fontWeight:600}}>
+                    {s.role==="admin"?"👑 Admin": s.role==="reception"?"🧑‍💼 Reception":"🛵 Delivery"}
+                  </span>
+                  {!s.active && <span style={{fontSize:".7rem",color:"#B0ACA5",fontStyle:"italic"}}>disattivo</span>}
+                </div>
+                <div style={{display:"flex",gap:12,marginTop:2}}>
+                  <span style={{fontSize:".78rem",color:"#7A7770"}}>@{s.username}</span>
+                  {s.display_role && <span style={{fontSize:".78rem",color:"#B0ACA5"}}>{s.display_role}</span>}
+                </div>
+              </div>
+              <button onClick={()=>openStaffEdit(s)} style={{padding:"5px 10px",background:"#fff",border:"1.5px solid #EDE0CC",borderRadius:6,fontSize:".78rem",cursor:"pointer",color:"#3A3A36"}}>✏️</button>
+              <button onClick={()=>toggleStaffActive(s)} style={{padding:"5px 10px",background:"#fff",border:`1.5px solid ${s.active?"#FFCDD2":"#C8E6C9"}`,borderRadius:6,fontSize:".78rem",cursor:"pointer",color: s.active?"#B71C1C":"#2E7D32"}}>
+                {s.active ? "Disattiva" : "Riattiva"}
+              </button>
+            </div>
+          ))}
+          {staffList.filter(s => showInactive || s.active).length === 0 && (
+            <p style={{fontSize:".82rem",color:"#B0ACA5",textAlign:"center",padding:"16px 0"}}>Nessun membro del personale trovato.</p>
+          )}
+        </div>
+      </div>
+
+      {/* Staff modal */}
+      {staffModal !== null && (
+        <>
+          <div onClick={()=>setStaffModal(null)} style={{position:"fixed",inset:0,zIndex:200,background:"rgba(28,28,26,.45)",backdropFilter:"blur(2px)"}}/>
+          <div role="dialog" style={{position:"fixed",bottom:0,left:0,right:0,zIndex:201,background:"#FDF6EC",borderRadius:"20px 20px 0 0",padding:"24px",maxWidth:480,margin:"0 auto",boxShadow:"0 -8px 40px rgba(28,28,26,.18)",maxHeight:"90vh",overflowY:"auto"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <h3 style={{fontFamily:"Georgia,serif",fontSize:"1rem",fontWeight:700,color:"#1C1C1A"}}>
+                {staffModal==="new" ? "Nuovo membro del personale" : "Modifica utente"}
+              </h3>
+              <button onClick={()=>setStaffModal(null)} style={{background:"rgba(28,28,26,.08)",border:"none",width:32,height:32,borderRadius:"50%",fontSize:".9rem",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:12}}>
+              <div>
+                <label style={{fontSize:".72rem",fontWeight:600,color:"#7A7770",textTransform:"uppercase",letterSpacing:".06em",display:"block",marginBottom:4}}>Nome completo *</label>
+                <input value={staffDraft.name} onChange={e=>setStaffDraft(p=>({...p,name:e.target.value}))} placeholder="es. Mario Rossi" style={{width:"100%",padding:"9px 12px",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".88rem",fontFamily:"inherit",boxSizing:"border-box"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:".72rem",fontWeight:600,color:"#7A7770",textTransform:"uppercase",letterSpacing:".06em",display:"block",marginBottom:4}}>Username *</label>
+                <input value={staffDraft.username} onChange={e=>setStaffDraft(p=>({...p,username:e.target.value}))} placeholder="es. mario" style={{width:"100%",padding:"9px 12px",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".88rem",fontFamily:"inherit",boxSizing:"border-box"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:".72rem",fontWeight:600,color:"#7A7770",textTransform:"uppercase",letterSpacing:".06em",display:"block",marginBottom:4}}>
+                  {staffModal==="new" ? "Password *" : "Nuova password (lascia vuoto per non cambiare)"}
+                </label>
+                <input type="password" value={staffDraft.password} onChange={e=>setStaffDraft(p=>({...p,password:e.target.value}))} placeholder={staffModal==="new" ? "Password" : "••••••••"} style={{width:"100%",padding:"9px 12px",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".88rem",fontFamily:"inherit",boxSizing:"border-box"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:".72rem",fontWeight:600,color:"#7A7770",textTransform:"uppercase",letterSpacing:".06em",display:"block",marginBottom:4}}>Ruolo *</label>
+                <select value={staffDraft.role} onChange={e=>setStaffDraft(p=>({...p,role:e.target.value}))} style={{width:"100%",padding:"9px 12px",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".88rem",fontFamily:"inherit",background:"#fff",boxSizing:"border-box"}}>
+                  <option value="reception">🧑‍💼 Reception</option>
+                  <option value="delivery">🛵 Delivery</option>
+                  <option value="admin">👑 Admin</option>
+                </select>
+              </div>
+              <div>
+                <label style={{fontSize:".72rem",fontWeight:600,color:"#7A7770",textTransform:"uppercase",letterSpacing:".06em",display:"block",marginBottom:4}}>Ruolo visualizzato (opzionale)</label>
+                <input value={staffDraft.display_role} onChange={e=>setStaffDraft(p=>({...p,display_role:e.target.value}))} placeholder="es. Barista, Cameriere, Cuoco…" style={{width:"100%",padding:"9px 12px",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".88rem",fontFamily:"inherit",boxSizing:"border-box"}}/>
+              </div>
+              {staffErr && <p style={{fontSize:".82rem",color:"#B03A2E",margin:0}}>{staffErr}</p>}
+              <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:4}}>
+                <button onClick={()=>setStaffModal(null)} style={{padding:"9px 18px",background:"transparent",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".85rem",cursor:"pointer",fontFamily:"inherit"}}>Annulla</button>
+                <button onClick={saveStaff} disabled={staffSaving} style={{padding:"9px 18px",background:"#B03A2E",color:"#fff",border:"none",borderRadius:8,fontSize:".85rem",cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
+                  {staffSaving ? "Salvataggio…" : staffModal==="new" ? "Crea utente" : "Salva modifiche"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
