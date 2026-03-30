@@ -82,73 +82,93 @@ function LoginScreen({ onLogin, slug }: { onLogin: (u: StaffUser) => void; slug:
   const roleLabel = (s: StaffEntry) => s.display_role || (s.role==="admin" ? "Admin" : s.role==="reception" ? "Reception" : "Delivery");
 
   return (
-    <div style={{minHeight:"100vh", display:"flex", background:"#1A1A18", fontFamily:"Georgia,serif", userSelect:"none"}}>
+    <>
+    <style>{`
+      .login-wrap{min-height:100vh;display:flex;flex-direction:row;background:#1A1A18;font-family:Georgia,serif;user-select:none}
+      .login-staff{width:280px;flex-shrink:0;display:flex;flex-direction:column;border-right:1px solid #2A2A28;background:#1C1C1A}
+      .login-staff-header{padding:32px 24px 24px;text-align:center;border-bottom:1px solid #2A2A28}
+      .login-staff-list{flex:1;overflow-y:auto;padding:16px 12px;display:flex;flex-direction:column;gap:8px}
+      .login-staff-btn{display:flex;align-items:center;gap:12px;padding:14px 16px;border-radius:10px;cursor:pointer;text-align:left;transition:background .15s;-webkit-tap-highlight-color:transparent}
+      .login-numpad-panel{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:40px}
+      .login-pin-display{width:240px;height:56px;background:#242422;border:1.5px solid #2E2E2C;border-radius:12px;display:flex;align-items:center;justify-content:center;gap:10px}
+      .login-numpad-grid{display:grid;grid-template-columns:repeat(3,88px);gap:10px}
+      .login-numpad-btn{height:80px;border-radius:12px;border:none;cursor:pointer;font-family:Georgia,serif;font-weight:700;color:#FDF6EC;outline:1px solid #333330;transition:background .12s,transform .08s;-webkit-tap-highlight-color:transparent}
+      @media(max-width:640px){
+        .login-wrap{flex-direction:column}
+        .login-staff{width:100%;border-right:none;border-bottom:1px solid #2A2A28}
+        .login-staff-header{padding:20px 20px 16px;display:flex;align-items:center;gap:12px;text-align:left;border-bottom:none}
+        .login-staff-header-logo{font-size:28px;line-height:1}
+        .login-staff-list{flex-direction:row;overflow-x:auto;overflow-y:hidden;padding:10px 12px 14px;gap:8px;flex:none}
+        .login-staff-btn{flex-direction:column;align-items:center;gap:6px;padding:12px 16px;min-width:80px;text-align:center}
+        .login-numpad-panel{flex:1;padding:16px 20px 24px;gap:14px;justify-content:flex-start}
+        .login-pin-display{width:100%;max-width:320px;height:48px}
+        .login-numpad-grid{grid-template-columns:repeat(3,1fr);width:100%;max-width:320px;gap:8px}
+        .login-numpad-btn{height:64px;font-size:1.5rem!important}
+      }
+    `}</style>
+    <div className="login-wrap">
 
-      {/* ── Left: staff list ── */}
-      <div style={{width:280, flexShrink:0, display:"flex", flexDirection:"column", borderRight:"1px solid #2A2A28", background:"#1C1C1A"}}>
-        <div style={{padding:"32px 24px 24px", textAlign:"center", borderBottom:"1px solid #2A2A28"}}>
-          <div style={{fontSize:36, marginBottom:8}}>🍕</div>
-          <p style={{color:"#FDF6EC", fontWeight:700, fontSize:"1rem", margin:0}}>La Piazzetta</p>
-          <p style={{color:"#5A5A56", fontSize:".7rem", margin:"4px 0 0", textTransform:"uppercase", letterSpacing:".1em"}}>POS</p>
+      {/* ── Staff panel ── */}
+      <div className="login-staff">
+        <div className="login-staff-header">
+          <span className="login-staff-header-logo">🍕</span>
+          <div>
+            <p style={{color:"#FDF6EC", fontWeight:700, fontSize:"1rem", margin:0}}>La Piazzetta</p>
+            <p style={{color:"#5A5A56", fontSize:".7rem", margin:"2px 0 0", textTransform:"uppercase", letterSpacing:".1em"}}>POS</p>
+          </div>
         </div>
-        <div style={{flex:1, overflowY:"auto", padding:"16px 12px", display:"flex", flexDirection:"column", gap:8}}>
+        <div className="login-staff-list">
           {staffList.map(s => {
-            const active = selected?.id === s.id;
+            const isActive = selected?.id === s.id;
             return (
-              <button key={s.id} onClick={() => { setSelected(s); setPin(""); setErr(""); }}
-                style={{display:"flex", alignItems:"center", gap:12, padding:"14px 16px", borderRadius:10, cursor:"pointer", border: active ? "none" : "1px solid #2E2E2C", background: active ? "#B03A2E" : "#242422", textAlign:"left", transition:"background .15s"}}>
-                <span style={{fontSize:"1.5rem", flexShrink:0}}>👤</span>
+              <button key={s.id} className="login-staff-btn"
+                onClick={() => { setSelected(s); setPin(""); setErr(""); }}
+                style={{border: isActive ? "none" : "1px solid #2E2E2C", background: isActive ? "#B03A2E" : "#242422"}}>
+                <span style={{fontSize:"1.4rem", flexShrink:0}}>👤</span>
                 <div style={{minWidth:0}}>
-                  <p style={{color:"#FDF6EC", fontSize:".9rem", fontWeight:600, margin:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{s.name}</p>
-                  <p style={{color: active ? "rgba(253,246,236,.65)" : "#5A5A56", fontSize:".72rem", margin:"2px 0 0"}}>{roleLabel(s)}</p>
+                  <p style={{color:"#FDF6EC", fontSize:".88rem", fontWeight:600, margin:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{s.name}</p>
+                  <p style={{color: isActive ? "rgba(253,246,236,.65)" : "#5A5A56", fontSize:".7rem", margin:"2px 0 0", whiteSpace:"nowrap"}}>{roleLabel(s)}</p>
                 </div>
               </button>
             );
           })}
           {staffList.length === 0 && (
-            <p style={{color:"#3A3A36", fontSize:".8rem", textAlign:"center", marginTop:32}}>Nessun utente trovato</p>
+            <p style={{color:"#3A3A36", fontSize:".8rem", textAlign:"center", padding:"16px 0"}}>Nessun utente trovato</p>
           )}
         </div>
       </div>
 
-      {/* ── Right: numpad ── */}
-      <div style={{flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:20, padding:40}}>
+      {/* ── Numpad panel ── */}
+      <div className="login-numpad-panel">
         <p style={{color:"#5A5A56", fontSize:".72rem", textTransform:"uppercase", letterSpacing:".1em", margin:0}}>
-          {selected ? `Inserisci PIN · ${selected.name}` : "Seleziona un utente"}
+          {selected ? `PIN · ${selected.name}` : "Seleziona un utente"}
         </p>
 
-        {/* PIN dots display */}
-        <div style={{width:240, height:56, background:"#242422", border:"1.5px solid #2E2E2C", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", gap:10}}>
+        <div className="login-pin-display">
           {pin.length === 0
             ? <span style={{color:"#3A3A36", fontSize:".85rem", letterSpacing:".1em"}}>· · · · · ·</span>
             : Array.from({length: pin.length}).map((_, i) => (
-                <span key={i} style={{width:12, height:12, borderRadius:"50%", background:"#FDF6EC", display:"inline-block"}}/>
+                <span key={i} style={{width:11, height:11, borderRadius:"50%", background:"#FDF6EC", display:"inline-block", flexShrink:0}}/>
               ))
           }
         </div>
 
-        {/* Numpad grid */}
-        <div style={{display:"grid", gridTemplateColumns:"repeat(3, 88px)", gap:10}}>
+        <div className="login-numpad-grid">
           {KEYS.map(k => {
-            const isConfirm  = k === "✓";
+            const isConfirm   = k === "✓";
             const isBackspace = k === "⌫";
-            const disabled = isConfirm && (!selected || !pin || loading);
+            const disabled    = isConfirm && (!selected || !pin || loading);
             return (
-              <button key={k}
+              <button key={k} className="login-numpad-btn"
                 onClick={() => isConfirm ? doLogin() : pressKey(k)}
                 disabled={!!disabled}
                 style={{
-                  height: 80, borderRadius: 12, border: "none", cursor: disabled ? "not-allowed" : "pointer",
-                  fontSize: isBackspace || isConfirm ? "1.6rem" : "1.8rem",
-                  fontFamily: "Georgia,serif", fontWeight: 700,
+                  fontSize: isBackspace || isConfirm ? "1.5rem" : "1.8rem",
                   background: isConfirm ? (disabled ? "#4A1A10" : "#B03A2E") : isBackspace ? "#1E1E1C" : "#2A2A28",
-                  color: "#FDF6EC",
-                  outline: "1px solid #333330",
                   opacity: disabled ? 0.4 : 1,
-                  transition: "background .12s, transform .08s",
-                  WebkitTapHighlightColor: "transparent",
+                  cursor: disabled ? "not-allowed" : "pointer",
                 }}
-                onPointerDown={e => { if (!disabled) (e.currentTarget as HTMLButtonElement).style.transform = "scale(.93)"; }}
+                onPointerDown={e => { if (!disabled) (e.currentTarget as HTMLButtonElement).style.transform = "scale(.92)"; }}
                 onPointerUp={e => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
                 onPointerLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
               >{loading && isConfirm ? "…" : k}</button>
@@ -159,6 +179,7 @@ function LoginScreen({ onLogin, slug }: { onLogin: (u: StaffUser) => void; slug:
         {err && <p style={{color:"#F87171", fontSize:".82rem", margin:0}}>{err}</p>}
       </div>
     </div>
+    </>
   );
 }
 
