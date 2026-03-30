@@ -1206,6 +1206,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
   const [authChecked,  setAuthChecked]  = useState(false);
   const [tab,          setTab]          = useState<PosTab>("cassa");
   const [cassaMobile,  setCassaMobile]  = useState<"tavoli"|"menu"|"conto">("tavoli");
+  const [tablePreview, setTablePreview] = useState<KioskTable | null>(null);
   const [activeShift,  setActiveShift]  = useState<DeliveryShift | null>(null);
 
   // Cassa state
@@ -1425,10 +1426,15 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
               <div style={{flex:1, overflowY:"auto", padding:"6px 12px 12px", display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(90px,1fr))", gap:10, alignContent:"start"}}>
                 {tables.filter(t=>t.active).map(t => {
                   const inv = invMap[t.id]; const occupied = !!inv; const isActive = selTable?.id===t.id;
+                  const isPreviewed = tablePreview?.id===t.id;
                   const label = t.name.replace(/[^0-9]/g,"")||t.name;
                   return (
-                    <button key={t.id} onClick={()=>selectTable(t)}
-                      style={{height:90, borderRadius:12, border:`2px solid ${isActive?"#60a5fa":occupied?"#f59e0b":"#334155"}`, background:isActive?"#1d4ed8":occupied?"#92400e":"#1e293b", color:"#fff", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:5, WebkitTapHighlightColor:"transparent"}}>
+                    <button key={t.id}
+                      onClick={()=>{
+                        if (isPreviewed) { selectTable(t); setCassaMobile("menu"); setTablePreview(null); }
+                        else setTablePreview(t);
+                      }}
+                      style={{height:90, borderRadius:12, border:`2px solid ${isPreviewed?"#fff":isActive?"#60a5fa":occupied?"#f59e0b":"#334155"}`, background:isPreviewed?"#166534":isActive?"#1d4ed8":occupied?"#92400e":"#1e293b", color:"#fff", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:5, WebkitTapHighlightColor:"transparent", transition:"background .15s,border-color .15s"}}>
                       <span style={{fontSize:26, fontWeight:700, lineHeight:1}}>{label}</span>
                       {occupied ? <span style={{fontSize:11, color:"#fcd34d", fontWeight:600}}>{eur(inv.total)}</span> : <span style={{fontSize:11, color:"#475569"}}>libero</span>}
                     </button>
@@ -1436,6 +1442,44 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
                 })}
                 {tables.filter(t=>t.active).length===0 && <p style={{color:"#475569", fontSize:13, gridColumn:"1/-1", textAlign:"center", marginTop:48}}>Nessun tavolo — aggiungili dalla tab Tavoli</p>}
               </div>
+
+              {/* Table preview modal — appears in the middle of the screen */}
+              {tablePreview && (()=>{
+                const inv = invMap[tablePreview.id];
+                return (
+                  <>
+                    <div onClick={()=>setTablePreview(null)} style={{position:"fixed",inset:0,zIndex:40,background:"rgba(0,0,0,.6)"}}/>
+                    <div style={{position:"fixed",left:"50%",top:"50%",transform:"translate(-50%,-50%)",zIndex:41,background:"#1e293b",borderRadius:18,padding:"20px 20px 16px",width:"min(88vw,340px)",maxHeight:"72vh",overflow:"auto",display:"flex",flexDirection:"column",gap:12,boxShadow:"0 20px 60px rgba(0,0,0,.7)"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                        <p style={{color:"#f1f5f9",fontFamily:"Georgia,serif",fontSize:"1.05rem",fontWeight:700}}>🪑 {tablePreview.name}</p>
+                        <button onClick={()=>setTablePreview(null)} style={{background:"#334155",border:"none",width:28,height:28,borderRadius:"50%",color:"#94a3b8",cursor:"pointer",fontSize:".85rem",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                      </div>
+                      {inv ? (<>
+                        <div style={{display:"flex",flexDirection:"column",gap:4,maxHeight:240,overflow:"auto"}}>
+                          {inv.invoice_items?.map((ii:any,i:number) => (
+                            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",padding:"5px 0",borderBottom:"1px solid #0f172a"}}>
+                              <span style={{color:"#94a3b8",fontSize:13,flex:1}}><span style={{color:"#f1f5f9",fontWeight:600}}>{ii.quantity}×</span> {ii.article_name}</span>
+                              <span style={{color:"#64748b",fontSize:12,whiteSpace:"nowrap",marginLeft:8}}>{eur(ii.total_price)}</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0 0",borderTop:"1px solid #334155"}}>
+                          <span style={{color:"#94a3b8",fontSize:13}}>Totale</span>
+                          <span style={{color:"#f1f5f9",fontWeight:700,fontSize:"1rem"}}>{eur(inv.total)}</span>
+                        </div>
+                      </>) : (
+                        <p style={{color:"#475569",fontSize:13,textAlign:"center",padding:"16px 0"}}>Tavolo libero</p>
+                      )}
+                      <div style={{display:"flex",gap:8,marginTop:4}}>
+                        <button onClick={()=>{selectTable(tablePreview);setCassaMobile("menu");setTablePreview(null);}}
+                          style={{flex:1,padding:"11px 0",background:"#1d4ed8",border:"none",borderRadius:10,color:"#fff",fontSize:".88rem",fontWeight:600,cursor:"pointer"}}>🍕 Menu</button>
+                        <button onClick={()=>{selectTable(tablePreview);setCassaMobile("conto");setTablePreview(null);}}
+                          style={{flex:1,padding:"11px 0",background:"#166534",border:"none",borderRadius:10,color:"#fff",fontSize:".88rem",fontWeight:600,cursor:"pointer"}}>🧾 Conto</button>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
 
             {/* Categories — two-level */}
