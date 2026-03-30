@@ -920,7 +920,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
       const loaded: CartItem[] = inv.invoice_items.map(ii => {
         const art = articles.find(a => a.name === ii.article_name) ?? {
           id: `inv_${ii.id}`, code: "", name: ii.article_name,
-          price: ii.unit_price, category: "", vat_rate: ii.vat_rate,
+          price: ii.unit_price, category: "", vat_rate: ii.vat_rate, section: "",
         };
         return { article: art, qty: ii.quantity };
       });
