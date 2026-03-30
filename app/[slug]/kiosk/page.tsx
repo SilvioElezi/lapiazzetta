@@ -59,18 +59,50 @@ export default async function KioskPage({
     }
   }
 
-  const { data: menuRows } = await supabaseAdmin
-    .from("menu")
-    .select("*")
-    .eq("business_id", business.id)
-    .order("sort_order");
+  // Fetch articles visible on kiosk
+  const [{ data: artRows }, { data: menuCats }] = await Promise.all([
+    supabaseAdmin
+      .from("articles")
+      .select("id, name, description, price, image_url, category_label, options, active")
+      .eq("business_id", business.id)
+      .eq("show_kiosk", true)
+      .eq("active", true)
+      .order("category_label")
+      .order("sort_order")
+      .order("name"),
+    supabaseAdmin
+      .from("menu")
+      .select("category, emoji, sort_order")
+      .eq("business_id", business.id)
+      .order("sort_order"),
+  ]);
 
-  const menu = (menuRows ?? []).map((row) => ({
-    ...row,
-    items: ((row.items as { active?: boolean; show_kiosk?: boolean }[]) ?? []).filter(
-      (i) => i.active !== false && i.show_kiosk !== false
-    ),
-  }));
+  const emojiMap: Record<string, string> = {};
+  for (const c of menuCats ?? []) emojiMap[c.category] = c.emoji;
+
+  // Group by category_label
+  const catMap: Record<string, { category: string; emoji: string; sort_order: number; items: unknown[] }> = {};
+  for (const a of artRows ?? []) {
+    const cat = (a.category_label as string) ?? "Altro";
+    if (!catMap[cat]) {
+      const sortOrder = menuCats?.find(c => c.category === cat)?.sort_order ?? 99;
+      catMap[cat] = { category: cat, emoji: emojiMap[cat] ?? "📦", sort_order: sortOrder, items: [] };
+    }
+    catMap[cat].items.push({
+      id:          a.id,
+      name:        a.name,
+      ingredients: a.description ?? "",
+      price:       Number(a.price),
+      image_url:   a.image_url ?? "",
+      active:      true,
+      options:     a.options ?? {},
+      popular:     false,
+      spicy:       false,
+      vegetarian:  false,
+    });
+  }
+
+  const menu = Object.values(catMap).sort((a, b) => a.sort_order - b.sort_order);
 
   return (
     <KioskView
@@ -79,7 +111,7 @@ export default async function KioskPage({
       tableToken={tableToken}
       businessName={business.name}
       logoUrl={business.logo_url ?? null}
-      menu={menu}
+      menu={menu as Parameters<typeof KioskView>[0]["menu"]}
     />
   );
 }

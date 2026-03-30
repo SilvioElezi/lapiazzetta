@@ -16,16 +16,7 @@ const DAY_LABELS: Record<string, string> = {
 };
 const DAY_KEYS = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
 
-const BP_CAT: Record<string, string> = {
-  "1":"Caffetteria","2":"Bibite","3":"Birra","4":"Gin / Tequila",
-  "5":"Whisky","6":"Vodka","7":"Amaro","8":"Vino","9":"Liquori",
-  "10":"Cognac","11":"Rum","12":"Long Drinks","13":"Cocktail","14":"Shots","0":"Varie",
-};
-function catLabel(c: string) {
-  if (c.startsWith("bp_"))   return BP_CAT[c.slice(3)] ?? `Cat. ${c.slice(3)}`;
-  if (c.startsWith("menu_")) return c.slice(5);
-  return c;
-}
+function catLabel(c: string) { return c; }
 function calcTotals(cart: CartItem[]) {
   const total = cart.reduce((s, c) => s + c.article.price * c.qty, 0);
   const vatByRate: Record<number, number> = {};
@@ -38,7 +29,7 @@ function calcTotals(cart: CartItem[]) {
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Article  = { id: string; code: string; name: string; price: number; category: string; vat_rate: number; section: string; };
+type Article  = { id: string; code: string; name: string; price: number; category: string; vat_rate: number; section: string; description?: string; image_url?: string; };
 type CartItem = { article: Article; qty: number; };
 type InvItem  = { id: string; article_name: string; quantity: number; unit_price: number; vat_rate: number; total_price: number; };
 type OpenInv  = { id: string; table_id: string | null; total: number; invoice_items?: InvItem[]; };
@@ -322,188 +313,258 @@ function SettingsTab({ slug }: { slug: string }) {
   );
 }
 
-// ─── MENU TAB ─────────────────────────────────────────────────────────────────
+// ─── MENU TAB (unified articles management) ──────────────────────────────────
 function MenuTab({ slug }: { slug: string }) {
-  const [menu, setMenu]   = useState<MenuCategory[]>([]);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved]   = useState(false);
-  const [editingItem, setEditingItem] = useState<{ catIdx: number; itemIdx: number | null } | null>(null);
-  const [draft, setDraft] = useState<MenuItem>({ id:newId(), name:"", ingredients:"", price:0, popular:false, spicy:false, vegetarian:false, active:true, image_url:"" });
-  const [showNewCat, setShowNewCat] = useState(false);
-  const [newCatName, setNewCatName] = useState("");
-  const [newCatEmoji, setNewCatEmoji] = useState("🍕");
-  const [newCatSection, setNewCatSection] = useState("");
+  type AdminArticle = {
+    id: string; code: string; name: string; description: string;
+    price: number; category: string; section: string; image_url: string;
+    active: boolean; show_cassa: boolean; show_kiosk: boolean; show_online: boolean;
+  };
+  type CatDef = { id?: number; category: string; emoji: string; sort_order: number; main_category?: string };
+  type Draft = {
+    id?: string; name: string; description: string; price: number;
+    category_label: string; section_name: string; image_url: string;
+    show_cassa: boolean; show_kiosk: boolean; show_online: boolean; active: boolean;
+  };
+
+  const blankDraft = (cat = "", sec = ""): Draft => ({
+    name: "", description: "", price: 0, category_label: cat, section_name: sec,
+    image_url: "", show_cassa: true, show_kiosk: false, show_online: false, active: true,
+  });
+
+  const [articles,     setArticles]     = useState<AdminArticle[]>([]);
+  const [menuCats,     setMenuCats]     = useState<CatDef[]>([]);
   const [menuSections, setMenuSections] = useState<{ name: string; emoji: string }[]>([]);
-  useEffect(() => {
-    fetch(`/${slug}/api/settings`).then(r=>r.json()).then(d => {
+  const [saving,       setSaving]       = useState(false);
+  const [saved,        setSaved]        = useState(false);
+  const [editingId,    setEditingId]    = useState<string | "new" | null>(null);
+  const [draft,        setDraft]        = useState<Draft>(blankDraft());
+  const [showNewCat,   setShowNewCat]   = useState(false);
+  const [newCatName,   setNewCatName]   = useState("");
+  const [newCatEmoji,  setNewCatEmoji]  = useState("🍕");
+  const [newCatSection,setNewCatSection]= useState("");
+  const [uploadingImg, setUploadingImg] = useState(false);
+
+  const loadAll = useCallback(async () => {
+    const [aRes, mRes, sRes] = await Promise.all([
+      fetch(`/${slug}/api/pos/articles?admin=1`),
+      fetch(`/${slug}/api/menu?admin=1`),
+      fetch(`/${slug}/api/settings`),
+    ]);
+    if (aRes.ok)  { const d = await aRes.json();  setArticles(d.articles ?? []); }
+    if (mRes.ok)  { setMenuCats(await mRes.json()); }
+    if (sRes.ok)  {
+      const d = await sRes.json();
       const secs = d.sections ?? [{ name:"Bar", emoji:"🍹" }, { name:"Pizzeria", emoji:"🍕" }];
       setMenuSections(secs);
       setNewCatSection(secs.find((s: { name: string }) => s.name !== "Bar")?.name ?? secs[0]?.name ?? "");
-    }).catch(()=>{});
+    }
   }, [slug]);
-  const [uploadingItemImg, setUploadingItemImg] = useState(false);
-  const uploadItemImage = async (file: File) => {
-    setUploadingItemImg(true);
+
+  useEffect(() => { loadAll(); }, [loadAll]);
+
+  const uploadImg = async (file: File) => {
+    setUploadingImg(true);
     const fd = new FormData(); fd.append("file", file);
-    try { const res = await fetch(`/${slug}/api/upload`, { method:"POST", body:fd }); const d = await res.json(); if (d.url) setDraft((prev) => ({ ...prev, image_url:d.url })); } catch {}
-    finally { setUploadingItemImg(false); }
+    try {
+      const res = await fetch(`/${slug}/api/upload`, { method:"POST", body:fd });
+      const d = await res.json();
+      if (d.url) setDraft(prev => ({ ...prev, image_url: d.url }));
+    } catch {} finally { setUploadingImg(false); }
   };
-  useEffect(() => { fetch(`/${slug}/api/menu`).then((r) => r.json()).then(setMenu).catch(() => {}); }, [slug]);
-  const saveCategory = async (cat: MenuCategory) => {
+
+  const openEdit = (article: AdminArticle | null, defaultCat = "", defaultSec = "") => {
+    if (article) {
+      setDraft({ id: article.id, name: article.name, description: article.description,
+        price: article.price, category_label: article.category, section_name: article.section,
+        image_url: article.image_url, show_cassa: article.show_cassa,
+        show_kiosk: article.show_kiosk, show_online: article.show_online, active: article.active });
+    } else {
+      setDraft(blankDraft(defaultCat, defaultSec));
+    }
+    setEditingId(article ? article.id : "new");
+  };
+
+  const saveArticle = async () => {
+    if (!draft.name.trim()) return;
     setSaving(true);
-    await fetch(`/${slug}/api/menu`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify([cat]) });
-    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
+    try {
+      const body = JSON.stringify({
+        name: draft.name, description: draft.description, price: draft.price,
+        category_label: draft.category_label, section_name: draft.section_name,
+        image_url: draft.image_url || null,
+        show_cassa: draft.show_cassa, show_kiosk: draft.show_kiosk,
+        show_online: draft.show_online, active: draft.active,
+      });
+      if (editingId === "new") {
+        await fetch(`/${slug}/api/pos/articles`, { method:"POST", headers:{"Content-Type":"application/json"}, body });
+      } else {
+        await fetch(`/${slug}/api/pos/articles/${editingId}`, { method:"PATCH", headers:{"Content-Type":"application/json"}, body });
+      }
+      await loadAll();
+      setEditingId(null);
+      setSaved(true); setTimeout(() => setSaved(false), 2000);
+    } finally { setSaving(false); }
   };
-  const toggleActive  = (ci: number, ii: number) => { const u = menu.map((cat,c)=>c!==ci?cat:{...cat,items:cat.items.map((item,i)=>i!==ii?item:{...item,active:!item.active})}); setMenu(u); saveCategory(u[ci]); };
-  const deleteItem    = (ci: number, ii: number) => { if (!confirm("Eliminare?")) return; const u = menu.map((cat,c)=>c!==ci?cat:{...cat,items:cat.items.filter((_,i)=>i!==ii)}); setMenu(u); saveCategory(u[ci]); };
-  const deleteCategory = async (ci: number) => {
-    if (!confirm(`Eliminare "${menu[ci].category}"?`)) return;
-    const cat = menu[ci];
-    if (cat.id) await fetch(`/${slug}/api/menu`, { method:"DELETE", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ id:cat.id }) });
-    setMenu(menu.filter((_,c)=>c!==ci));
+
+  const toggleActive = async (a: AdminArticle) => {
+    setArticles(prev => prev.map(x => x.id === a.id ? { ...x, active: !x.active } : x));
+    await fetch(`/${slug}/api/pos/articles/${a.id}`, {
+      method:"PATCH", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ active: !a.active }),
+    });
   };
-  const openEdit = (ci: number, ii: number | null) => {
-    setEditingItem({ catIdx:ci, itemIdx:ii });
-    setDraft(ii===null ? { id:newId(), name:"", ingredients:"", price:0, popular:false, spicy:false, vegetarian:false, active:true, image_url:"", show_cassa:true, show_kiosk:false, show_online:false } : { ...menu[ci].items[ii] });
+
+  const deleteArticle = async (id: string) => {
+    if (!confirm("Eliminare questo prodotto?")) return;
+    setArticles(prev => prev.filter(a => a.id !== id));
+    await fetch(`/${slug}/api/pos/articles/${id}`, { method:"DELETE" });
   };
-  const saveItem = () => {
-    if (!draft.name.trim() || !editingItem) return;
-    const { catIdx:ci, itemIdx:ii } = editingItem;
-    const u = menu.map((cat,c) => { if (c!==ci) return cat; return { ...cat, items: ii===null ? [...cat.items,draft] : cat.items.map((item,i)=>i===ii?draft:item) }; });
-    setMenu(u); saveCategory(u[ci]); setEditingItem(null);
-  };
+
   const addCategory = () => {
     if (!newCatName.trim()) return;
-    const newCat: MenuCategory = { category:newCatName.trim(), emoji:newCatEmoji, sort_order:menu.length, items:[], main_category: newCatSection || undefined };
-    const u = [...menu, newCat]; setMenu(u);
-    fetch(`/${slug}/api/menu`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify([newCat]) })
-      .then(() => fetch(`/${slug}/api/menu`).then((r)=>r.json()).then(setMenu));
+    const cat: CatDef = { category:newCatName.trim(), emoji:newCatEmoji, sort_order:menuCats.length, main_category:newCatSection||undefined };
+    fetch(`/${slug}/api/menu`, { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify([cat]) })
+      .then(() => fetch(`/${slug}/api/menu?admin=1`).then(r=>r.json()).then(setMenuCats));
     setNewCatName(""); setNewCatEmoji("🍕"); setShowNewCat(false);
   };
+
+  const deleteCategory = async (cat: CatDef) => {
+    if (!confirm(`Eliminare categoria "${cat.category}"?`)) return;
+    if (cat.id) await fetch(`/${slug}/api/menu`, { method:"DELETE", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ id:cat.id }) });
+    setMenuCats(prev => prev.filter(c => c.id !== cat.id));
+  };
+
+  const byCategory = useMemo(() => {
+    const m: Record<string, AdminArticle[]> = {};
+    for (const a of articles) { if (!m[a.category]) m[a.category] = []; m[a.category].push(a); }
+    return m;
+  }, [articles]);
+
   return (
     <div className="tab-content">
       <div className="menu-toolbar">
-        <span className="menu-toolbar__title">{menu.reduce((s,c)=>s+c.items.length,0)} prodotti · {menu.length} categorie</span>
+        <span className="menu-toolbar__title">{articles.length} prodotti · {menuCats.length} categorie</span>
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          {saved && <span className="saved-badge">✓ Salvato</span>}
+          {saved  && <span className="saved-badge">✓ Salvato</span>}
           {saving && <span className="saving-badge">Salvataggio…</span>}
           <button className="btn-add-cat" onClick={()=>setShowNewCat(!showNewCat)}>+ Categoria</button>
         </div>
       </div>
+
       {showNewCat && (
         <div className="new-cat-form">
-          <input value={newCatEmoji} onChange={(e)=>setNewCatEmoji(e.target.value)} className="emoji-input"/>
-          <input value={newCatName} onChange={(e)=>setNewCatName(e.target.value)} placeholder="Nome categoria" className="cat-name-input" onKeyDown={(e)=>e.key==="Enter"&&addCategory()}/>
-          <select value={newCatSection} onChange={(e)=>setNewCatSection(e.target.value)} style={{padding:"8px 10px",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".85rem",fontFamily:"inherit",outline:"none",minWidth:120}}>
+          <input value={newCatEmoji} onChange={e=>setNewCatEmoji(e.target.value)} className="emoji-input"/>
+          <input value={newCatName} onChange={e=>setNewCatName(e.target.value)} placeholder="Nome categoria" className="cat-name-input" onKeyDown={e=>e.key==="Enter"&&addCategory()}/>
+          <select value={newCatSection} onChange={e=>setNewCatSection(e.target.value)} style={{padding:"8px 10px",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".85rem",fontFamily:"inherit",outline:"none",minWidth:120}}>
             {menuSections.map(s=><option key={s.name} value={s.name}>{s.emoji} {s.name}</option>)}
           </select>
           <button className="btn-confirm" onClick={addCategory}>Aggiungi</button>
           <button className="btn-cancel" onClick={()=>setShowNewCat(false)}>Annulla</button>
         </div>
       )}
-      {/* Group categories by section */}
+
       {menuSections.map(sec => {
-        const cats = menu.filter(c => (c.main_category ?? menuSections.find(s=>s.name!=="Bar")?.name) === sec.name);
-        if (cats.length === 0) return null;
+        const cats = menuCats.filter(c => (c.main_category ?? menuSections.find(s=>s.name!=="Bar")?.name) === sec.name);
+        const secCount = cats.reduce((s,c) => s + (byCategory[c.category]?.length ?? 0), 0);
         return (
           <div key={sec.name}>
             <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",background:"#F5EADA",borderRadius:10,margin:"8px 0 4px",border:"1px solid #EDE0CC"}}>
               <span style={{fontSize:"1.1rem"}}>{sec.emoji}</span>
               <span style={{fontFamily:"Georgia,serif",fontSize:".95rem",fontWeight:700,color:"#1C1C1A"}}>{sec.name}</span>
-              <span style={{fontSize:".75rem",color:"#7A7770",marginLeft:"auto"}}>{cats.reduce((s,c)=>s+c.items.length,0)} prodotti</span>
+              <span style={{fontSize:".75rem",color:"#7A7770",marginLeft:"auto"}}>{secCount} prodotti</span>
             </div>
-      {cats.map((cat) => {
-        const ci = menu.indexOf(cat);
-        return (
-        <div key={cat.id??cat.category} className="menu-section">
-          <div className="menu-section__head">
-            <h3 className="menu-section__title">{cat.emoji} {cat.category}</h3>
-            <div style={{display:"flex",gap:6}}>
-              <button className="btn-sm btn-sm--add" onClick={()=>openEdit(ci,null)}>+ Prodotto</button>
-              <button className="btn-sm btn-sm--del" onClick={()=>deleteCategory(ci)}>🗑</button>
-            </div>
-          </div>
-          <div className="menu-items-list">
-            {cat.items.map((item,ii) => (
-              <div key={item.id} className={`menu-item-row${!item.active?" menu-item-row--inactive":""}`}>
-                <div className="menu-item-row__main">
-                  <span className="menu-item-row__name">{item.name}</span>
-                  <div className="menu-item-row__flags">
-                    {item.popular && <span className="flag">⭐</span>}
-                    {item.spicy   && <span className="flag">🌶</span>}
-                    {item.vegetarian && <span className="flag">🌿</span>}
-                    {!item.active && <span className="flag flag--off">OFF</span>}
-                    {item.show_kiosk === true && <span className="flag" title="Visibile su Kiosk">🪑</span>}
-                    {item.show_online === true && <span className="flag" title="Visibile Online">🌐</span>}
+            {cats.map(cat => {
+              const catArticles = byCategory[cat.category] ?? [];
+              return (
+                <div key={cat.id??cat.category} className="menu-section">
+                  <div className="menu-section__head">
+                    <h3 className="menu-section__title">{cat.emoji} {cat.category}</h3>
+                    <div style={{display:"flex",gap:6}}>
+                      <button className="btn-sm btn-sm--add" onClick={()=>openEdit(null, cat.category, sec.name)}>+ Prodotto</button>
+                      <button className="btn-sm btn-sm--del" onClick={()=>deleteCategory(cat)}>🗑</button>
+                    </div>
                   </div>
-                  <span className="menu-item-row__price">€{item.price.toFixed(2)}</span>
+                  <div className="menu-items-list">
+                    {catArticles.map(a => (
+                      <div key={a.id} className={`menu-item-row${!a.active?" menu-item-row--inactive":""}`}>
+                        <div className="menu-item-row__main">
+                          <span className="menu-item-row__name">{a.name}</span>
+                          <div className="menu-item-row__flags">
+                            {!a.active      && <span className="flag flag--off">OFF</span>}
+                            {a.show_kiosk   && <span className="flag" title="Kiosk">🪑</span>}
+                            {a.show_online  && <span className="flag" title="Online">🌐</span>}
+                          </div>
+                          <span className="menu-item-row__price">€{a.price.toFixed(2)}</span>
+                        </div>
+                        {a.description && <p className="menu-item-row__ing">{a.description}</p>}
+                        <div className="menu-item-row__actions">
+                          <button className="btn-sm btn-sm--edit" onClick={()=>openEdit(a)}>✏️ Modifica</button>
+                          <button className="btn-sm" onClick={()=>toggleActive(a)}>{a.active?"⏸ Disattiva":"▶ Attiva"}</button>
+                          <button className="btn-sm btn-sm--del" onClick={()=>deleteArticle(a.id)}>🗑</button>
+                        </div>
+                      </div>
+                    ))}
+                    {catArticles.length===0 && <p className="empty-cat">Nessun prodotto. Clicca + Prodotto per aggiungere.</p>}
+                  </div>
                 </div>
-                <p className="menu-item-row__ing">{item.ingredients}</p>
-                <div className="menu-item-row__actions">
-                  <button className="btn-sm btn-sm--edit" onClick={()=>openEdit(ci,ii)}>✏️ Modifica</button>
-                  <button className="btn-sm" onClick={()=>toggleActive(ci,ii)}>{item.active?"⏸ Disattiva":"▶ Attiva"}</button>
-                  <button className="btn-sm btn-sm--del" onClick={()=>deleteItem(ci,ii)}>🗑</button>
-                </div>
-              </div>
-            ))}
-            {cat.items.length===0 && <p className="empty-cat">Nessun prodotto.</p>}
+              );
+            })}
           </div>
-        </div>
         );
       })}
-          </div>
-        );
-      })}
-      {editingItem!==null && (
+
+      {editingId !== null && (
         <>
-          <div className="modal-backdrop" onClick={()=>setEditingItem(null)}/>
+          <div className="modal-backdrop" onClick={()=>setEditingId(null)}/>
           <div className="modal">
-            <div className="modal__head"><h3>{editingItem.itemIdx===null?"Nuovo prodotto":"Modifica prodotto"}</h3><button onClick={()=>setEditingItem(null)}>✕</button></div>
+            <div className="modal__head">
+              <h3>{editingId==="new"?"Nuovo prodotto":"Modifica prodotto"}</h3>
+              <button onClick={()=>setEditingId(null)}>✕</button>
+            </div>
             <div className="modal__body">
-              <label className="modal-field"><span>Nome *</span><input value={draft.name} onChange={(e)=>setDraft({...draft,name:e.target.value})}/></label>
-              <label className="modal-field"><span>Ingredienti</span><textarea value={draft.ingredients} onChange={(e)=>setDraft({...draft,ingredients:e.target.value})} rows={2}/></label>
-              <label className="modal-field"><span>Descrizione breve</span><input value={draft.description??""} onChange={(e)=>setDraft({...draft,description:e.target.value})}/></label>
-              <label className="modal-field"><span>Prezzo (€) *</span><input type="number" step="0.5" min="0" value={draft.price} onChange={(e)=>setDraft({...draft,price:parseFloat(e.target.value)||0})}/></label>
+              <label className="modal-field"><span>Nome *</span><input value={draft.name} onChange={e=>setDraft({...draft,name:e.target.value})}/></label>
+              <label className="modal-field"><span>Descrizione / Ingredienti</span><textarea value={draft.description} onChange={e=>setDraft({...draft,description:e.target.value})} rows={2}/></label>
+              <label className="modal-field"><span>Prezzo (€) *</span><input type="number" step="0.5" min="0" value={draft.price} onChange={e=>setDraft({...draft,price:parseFloat(e.target.value)||0})}/></label>
+              <div className="modal-field">
+                <span>Categoria</span>
+                <select value={draft.category_label} onChange={e=>{const cat=menuCats.find(c=>c.category===e.target.value);setDraft({...draft,category_label:e.target.value,section_name:cat?.main_category??draft.section_name});}} style={{width:"100%",padding:"9px 12px",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".9rem",fontFamily:"inherit",outline:"none"}}>
+                  <option value="">— Scegli categoria —</option>
+                  {menuCats.map(c=><option key={c.id??c.category} value={c.category}>{c.category}</option>)}
+                </select>
+              </div>
               <div className="modal-field">
                 <span>Foto prodotto</span>
                 <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                   {draft.image_url && <img src={draft.image_url} alt="" style={{width:60,height:60,objectFit:"cover",borderRadius:8,border:"1px solid #EDE0CC",flexShrink:0}}/>}
                   <label style={{padding:"8px 14px",background:"#F5EADA",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".82rem",cursor:"pointer",fontFamily:"inherit"}}>
-                    {uploadingItemImg?"Caricamento…":"📁 Carica foto"}
-                    <input type="file" accept="image/*" style={{display:"none"}} onChange={(e)=>e.target.files?.[0]&&uploadItemImage(e.target.files[0])}/>
+                    {uploadingImg?"Caricamento…":"📁 Carica foto"}
+                    <input type="file" accept="image/*" style={{display:"none"}} onChange={e=>e.target.files?.[0]&&uploadImg(e.target.files[0])}/>
                   </label>
                   {draft.image_url && <button type="button" onClick={()=>setDraft({...draft,image_url:""})} style={{padding:"8px 12px",background:"transparent",border:"1px solid #EDE0CC",borderRadius:8,fontSize:".82rem",cursor:"pointer",color:"#7A7770"}}>Rimuovi</button>}
                 </div>
               </div>
               <div className="modal-flags">
-                {(["popular","spicy","vegetarian","active"] as const).map((flag) => (
-                  <label key={flag} className="flag-toggle">
-                    <input type="checkbox" checked={!!draft[flag]} onChange={(e)=>setDraft({...draft,[flag]:e.target.checked})}/>
-                    <span>{({popular:"⭐ Popolare",spicy:"🌶 Piccante",vegetarian:"🌿 Vegetariano",active:"✅ Attivo"})[flag]}</span>
-                  </label>
-                ))}
+                <label className="flag-toggle">
+                  <input type="checkbox" checked={draft.active} onChange={e=>setDraft({...draft,active:e.target.checked})}/>
+                  <span>✅ Attivo</span>
+                </label>
               </div>
               <div style={{marginTop:8,padding:"10px 12px",background:"#F5EADA",borderRadius:8,border:"1px solid #EDE0CC"}}>
-                <p style={{fontSize:".72rem",fontWeight:600,color:"#7A7770",textTransform:"uppercase",letterSpacing:".07em",marginBottom:8}}>Visibilità prodotto</p>
+                <p style={{fontSize:".72rem",fontWeight:600,color:"#7A7770",textTransform:"uppercase",letterSpacing:".07em",marginBottom:8}}>Visibilità</p>
                 <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
-                  <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:".85rem",color:"#1C1C1A"}}>
-                    <input type="checkbox" checked={draft.show_cassa !== false} onChange={(e)=>setDraft({...draft,show_cassa:e.target.checked})} style={{width:15,height:15,accentColor:"#B03A2E",cursor:"pointer"}}/>
-                    <span>🏠 Cassa</span>
-                  </label>
-                  <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:".85rem",color:"#1C1C1A"}}>
-                    <input type="checkbox" checked={draft.show_kiosk === true} onChange={(e)=>setDraft({...draft,show_kiosk:e.target.checked})} style={{width:15,height:15,accentColor:"#B03A2E",cursor:"pointer"}}/>
-                    <span>🪑 Kiosk</span>
-                  </label>
-                  <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:".85rem",color:"#1C1C1A"}}>
-                    <input type="checkbox" checked={draft.show_online === true} onChange={(e)=>setDraft({...draft,show_online:e.target.checked})} style={{width:15,height:15,accentColor:"#B03A2E",cursor:"pointer"}}/>
-                    <span>🌐 Online</span>
-                  </label>
+                  {([["show_cassa","🏠 Cassa"],["show_kiosk","🪑 Kiosk"],["show_online","🌐 Online"]] as const).map(([f,l])=>(
+                    <label key={f} style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:".85rem",color:"#1C1C1A"}}>
+                      <input type="checkbox" checked={!!draft[f]} onChange={e=>setDraft({...draft,[f]:e.target.checked})} style={{width:15,height:15,accentColor:"#B03A2E",cursor:"pointer"}}/>
+                      <span>{l}</span>
+                    </label>
+                  ))}
                 </div>
               </div>
             </div>
             <div className="modal__foot">
-              <button className="btn-cancel-modal" onClick={()=>setEditingItem(null)}>Annulla</button>
-              <button className="btn-save-modal" onClick={saveItem} disabled={!draft.name.trim()}>Salva</button>
+              <button className="btn-cancel-modal" onClick={()=>setEditingId(null)}>Annulla</button>
+              <button className="btn-save-modal" onClick={saveArticle} disabled={!draft.name.trim()||saving}>{saving?"Salvataggio…":"Salva"}</button>
             </div>
           </div>
         </>

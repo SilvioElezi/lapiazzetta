@@ -268,7 +268,7 @@ export default function MenuGrid({ slug }: { slug?: string }) {
           <div key={cat.category} className="menu-cat">
             <h2 className="menu-cat__title"><span>{cat.emoji}</span>{cat.category}</h2>
             <div className="menu-cat__pills">
-              {cat.items.filter((i) => i.active !== false && i.show_online !== false).map((item) => (
+              {cat.items.filter((i) => i.active !== false).map((item) => (
                 <ItemPill key={item.id} item={item} />
               ))}
             </div>

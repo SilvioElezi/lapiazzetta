@@ -3,11 +3,18 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
+// GET ?admin=1  → all articles, no visibility filter (for admin product management)
+// GET (default) → show_cassa=true + active=true (for POS Cassa)
+// GET ?context=kiosk   → show_kiosk=true + active=true
+// GET ?context=online  → show_online=true + active=true
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params;
+  const sp      = new URL(req.url).searchParams;
+  const isAdmin = sp.get("admin") === "1";
+  const context = sp.get("context"); // "kiosk" | "online" | null
 
   const { data: business, error: bizErr } = await supabaseAdmin
     .from("businesses")
@@ -16,12 +23,12 @@ export async function GET(
     .single();
 
   if (bizErr || !business) {
-    return NextResponse.json({ error: `Business not found: ${bizErr?.message}`, articles: [], categories: [], sections: [] }, { status: 404 });
+    return NextResponse.json({ error: "Business not found", articles: [], categories: [], sections: [] }, { status: 404 });
   }
 
   const bid = business.id;
 
-  // ── Fetch sections config from settings ───────────────────────────────────
+  // Sections config
   const { data: sectionRow } = await supabaseAdmin
     .from("settings")
     .select("value")
@@ -29,131 +36,60 @@ export async function GET(
     .eq("key", "sections")
     .single();
 
-  const sectionsConfig: { name: string; emoji: string }[] = (sectionRow?.value as { name: string; emoji: string }[]) ?? [
-    { name: "Bar",      emoji: "🍹" },
-    { name: "Pizzeria", emoji: "🍕" },
-  ];
+  const sectionsConfig: { name: string; emoji: string }[] =
+    (sectionRow?.value as { name: string; emoji: string }[]) ??
+    [{ name: "Bar", emoji: "🍹" }, { name: "Pizzeria", emoji: "🍕" }];
 
-  // ── BarPRO articles ───────────────────────────────────────────────────────
-  let barpro: { id: string; code: string; name: string; price: number; category: string; vat_rate: number; source: string; section: string }[] = [];
-  let artErr: string | null = null;
-  let vatErr: string | null = null;
+  // VAT rates
+  const { data: vatRates } = await supabaseAdmin.from("vat_rates").select("id, rate").eq("business_id", bid);
+  const vatMap: Record<number, number> = {};
+  for (const v of vatRates ?? []) vatMap[v.id] = Number(v.rate);
 
-  try {
-    const [{ data: rawArticles, error: aErr }, { data: vatRates, error: vErr }] = await Promise.all([
-      supabaseAdmin
-        .from("articles")
-        .select("id, code, name, price, category, vat_rate_id, active, show_cassa")
-        .eq("business_id", bid)
-        .eq("show_cassa", true)
-        .order("category", { nullsFirst: false })
-        .order("name"),
-      supabaseAdmin
-        .from("vat_rates")
-        .select("id, rate")
-        .eq("business_id", bid),
-    ]);
+  // Build query
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let query: any = supabaseAdmin
+    .from("articles")
+    .select("id, code, name, description, price, category_label, section_name, vat_rate_id, active, show_cassa, show_kiosk, show_online, image_url, options, sort_order")
+    .eq("business_id", bid)
+    .order("category_label", { nullsFirst: false })
+    .order("sort_order")
+    .order("name");
 
-    artErr = aErr?.message ?? null;
-    vatErr = vErr?.message ?? null;
-
-    const vatMap: Record<number, number> = {};
-    for (const v of vatRates || []) vatMap[v.id] = v.rate;
-
-    barpro = (rawArticles || [])
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .filter((a: any) => a.active !== false && a.show_cassa !== false)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .map((a: any) => ({
-        id:       String(a.id),
-        code:     String(a.code),
-        name:     String(a.name),
-        price:    Number(a.price) || 0,
-        category: `bp_${a.category ?? "0"}`,
-        vat_rate: vatMap[Number(a.vat_rate_id)] ?? 10,
-        source:   "barpro",
-        section:  "Bar",
-      }));
-  } catch (e) {
-    artErr = String(e);
+  if (!isAdmin) {
+    if (context === "kiosk")  { query = query.eq("show_kiosk",  true).eq("active", true); }
+    else if (context === "online") { query = query.eq("show_online", true).eq("active", true); }
+    else { query = query.eq("show_cassa", true).eq("active", true); }
   }
 
-  // ── Menu items (pizza / food) ─────────────────────────────────────────────
-  let menuItems: typeof barpro = [];
-  let menuErr: string | null = null;
-  // Maps category key (e.g. "menu_Pizza") → main_category name (e.g. "Pizzeria")
-  const menuCatSection: Record<string, string> = {};
+  const { data: raw, error: artErr } = await query;
 
-  try {
-    // Try with main_category; if column doesn't exist yet, fall back gracefully
-    type MenuCatRow = { category: string; items: unknown; main_category?: string | null };
-    let menuCats: MenuCatRow[] = [];
-    const r1 = await supabaseAdmin
-      .from("menu")
-      .select("category, items, main_category")
-      .eq("business_id", bid)
-      .order("sort_order", { ascending: true });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const articles = (raw ?? []).map((a: any) => ({
+    id:          String(a.id),
+    code:        String(a.code ?? ""),
+    name:        String(a.name),
+    description: String(a.description ?? ""),
+    price:       Number(a.price) || 0,
+    category:    String(a.category_label ?? "Varie"),
+    vat_rate:    vatMap[Number(a.vat_rate_id)] ?? 10,
+    section:     String(a.section_name ?? "Bar"),
+    image_url:   String(a.image_url ?? ""),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    options:     (a.options ?? {}) as any,
+    active:      a.active !== false,
+    show_cassa:  a.show_cassa !== false,
+    show_kiosk:  a.show_kiosk === true,
+    show_online: a.show_online === true,
+  }));
 
-    if (r1.error) {
-      // Likely column doesn't exist yet — retry without it
-      const r2 = await supabaseAdmin
-        .from("menu")
-        .select("category, items")
-        .eq("business_id", bid)
-        .order("sort_order", { ascending: true });
-      menuCats = (r2.data ?? []) as MenuCatRow[];
-      menuErr = r2.error?.message ?? null;
-    } else {
-      menuCats = (r1.data ?? []) as MenuCatRow[];
-    }
+  const categories = [...new Set(articles.map((a: { category: string }) => a.category))];
 
-    for (const cat of menuCats) {
-      const section = (cat.main_category as string | null) ?? sectionsConfig.find(s => s.name !== "Bar")?.name ?? "Pizzeria";
-      menuCatSection[`menu_${cat.category}`] = section;
-
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      for (const item of (cat.items as any[]) || []) {
-        if (item.active === false) continue;
-        if (item.show_cassa === false) continue;
-        menuItems.push({
-          id:       `menu_${item.id}`,
-          code:     `menu_${item.id}`,
-          name:     String(item.name),
-          price:    Number(item.price) || 0,
-          category: `menu_${cat.category}`,
-          vat_rate: 10,
-          source:   "menu",
-          section,
-        });
-      }
-    }
-  } catch (e) {
-    menuErr = String(e);
-  }
-
-  const articles = [...barpro, ...menuItems];
-
-  // Sorted categories: BarPRO first (numeric), then menu
-  const categories = [...new Set(articles.map(a => a.category))].sort((x, y) => {
-    const xb = x.startsWith("bp_"), yb = y.startsWith("bp_");
-    if (xb && yb) return Number(x.slice(3)) - Number(y.slice(3));
-    if (xb) return -1; if (yb) return 1;
-    return x.localeCompare(y);
-  });
-
-  // Build sections with their categories list
   const sectionCatMap: Record<string, string[]> = {};
   for (const s of sectionsConfig) sectionCatMap[s.name] = [];
-
-  // Bar section = all bp_ categories
-  for (const cat of categories.filter(c => c.startsWith("bp_"))) {
-    if (!sectionCatMap["Bar"]) sectionCatMap["Bar"] = [];
-    sectionCatMap["Bar"].push(cat);
-  }
-  // Other sections = menu_ categories by their main_category
-  for (const [catKey, sectionName] of Object.entries(menuCatSection)) {
-    if (!sectionCatMap[sectionName]) sectionCatMap[sectionName] = [];
-    if (categories.includes(catKey)) sectionCatMap[sectionName].push(catKey);
+  for (const a of articles) {
+    const sec = a.section;
+    if (!sectionCatMap[sec]) sectionCatMap[sec] = [];
+    if (!sectionCatMap[sec].includes(a.category)) sectionCatMap[sec].push(a.category);
   }
 
   const sections = sectionsConfig.map(s => ({
@@ -162,19 +98,62 @@ export async function GET(
     categories: sectionCatMap[s.name] ?? [],
   }));
 
-  return NextResponse.json({
-    articles,
-    categories,
-    sections,
-    debug: {
-      business_id:   bid,
-      barpro_count:  barpro.length,
-      menu_count:    menuItems.length,
-      art_error:     artErr,
-      vat_error:     vatErr,
-      menu_error:    menuErr,
-    },
-  }, {
-    headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
-  });
+  return NextResponse.json(
+    { articles, categories, sections, debug: { business_id: bid, total: articles.length, art_error: artErr?.message ?? null } },
+    { headers: { "Cache-Control": "no-store, no-cache, must-revalidate" } }
+  );
+}
+
+// POST — create a new article
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ slug: string }> }
+) {
+  const { slug } = await params;
+
+  const { data: business } = await supabaseAdmin
+    .from("businesses")
+    .select("id")
+    .eq("slug", slug)
+    .single();
+
+  if (!business) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const {
+    name, description, price, category_label, section_name,
+    image_url, options, vat_rate_id,
+    show_cassa = true, show_kiosk = false, show_online = false,
+  } = await req.json();
+
+  if (!name?.trim()) return NextResponse.json({ error: "Name required" }, { status: 400 });
+
+  const code = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+  const category = "custom_" + (category_label ?? "other").toLowerCase().replace(/[^a-z0-9]/g, "_");
+
+  const { data, error } = await supabaseAdmin
+    .from("articles")
+    .insert({
+      business_id:    business.id,
+      code,
+      name:           name.trim(),
+      description:    description ?? null,
+      price:          price ?? 0,
+      category,
+      category_label: category_label ?? null,
+      section_name:   section_name ?? null,
+      image_url:      image_url || null,
+      options:        options ?? {},
+      vat_rate_id:    vat_rate_id ?? null,
+      show_cassa,
+      show_kiosk,
+      show_online,
+      active:         true,
+      sort_order:     0,
+      created_by:     "admin",
+    })
+    .select("id")
+    .single();
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true, id: data.id });
 }
