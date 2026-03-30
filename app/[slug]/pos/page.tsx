@@ -484,6 +484,7 @@ function MenuTab({ slug }: { slug: string }) {
       {menuSections.map(sec => {
         const cats = menuCats.filter(c => (c.main_category ?? menuSections.find(s=>s.name!=="Bar")?.name) === sec.name);
         const secCount = cats.reduce((s,c) => s + (byCategory[c.category]?.length ?? 0), 0);
+        if (search.trim() && secCount === 0) return null;
         return (
           <div key={sec.name}>
             <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",background:"#F5EADA",borderRadius:10,margin:"8px 0 4px",border:"1px solid #EDE0CC"}}>
@@ -493,6 +494,7 @@ function MenuTab({ slug }: { slug: string }) {
             </div>
             {cats.map(cat => {
               const catArticles = byCategory[cat.category] ?? [];
+              if (search.trim() && catArticles.length === 0) return null;
               return (
                 <div key={cat.id??cat.category} className="menu-section">
                   <div className="menu-section__head">
