@@ -341,7 +341,7 @@ function MenuTab({ slug }: { slug: string }) {
   };
   const openEdit = (ci: number, ii: number | null) => {
     setEditingItem({ catIdx:ci, itemIdx:ii });
-    setDraft(ii===null ? { id:newId(), name:"", ingredients:"", price:0, popular:false, spicy:false, vegetarian:false, active:true, image_url:"" } : { ...menu[ci].items[ii] });
+    setDraft(ii===null ? { id:newId(), name:"", ingredients:"", price:0, popular:false, spicy:false, vegetarian:false, active:true, image_url:"", show_cassa:true, show_kiosk:false, show_online:false } : { ...menu[ci].items[ii] });
   };
   const saveItem = () => {
     if (!draft.name.trim() || !editingItem) return;
@@ -410,6 +410,8 @@ function MenuTab({ slug }: { slug: string }) {
                     {item.spicy   && <span className="flag">🌶</span>}
                     {item.vegetarian && <span className="flag">🌿</span>}
                     {!item.active && <span className="flag flag--off">OFF</span>}
+                    {item.show_kiosk === true && <span className="flag" title="Visibile su Kiosk">🪑</span>}
+                    {item.show_online === true && <span className="flag" title="Visibile Online">🌐</span>}
                   </div>
                   <span className="menu-item-row__price">€{item.price.toFixed(2)}</span>
                 </div>
@@ -457,6 +459,23 @@ function MenuTab({ slug }: { slug: string }) {
                     <span>{({popular:"⭐ Popolare",spicy:"🌶 Piccante",vegetarian:"🌿 Vegetariano",active:"✅ Attivo"})[flag]}</span>
                   </label>
                 ))}
+              </div>
+              <div style={{marginTop:8,padding:"10px 12px",background:"#F5EADA",borderRadius:8,border:"1px solid #EDE0CC"}}>
+                <p style={{fontSize:".72rem",fontWeight:600,color:"#7A7770",textTransform:"uppercase",letterSpacing:".07em",marginBottom:8}}>Visibilità prodotto</p>
+                <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
+                  <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:".85rem",color:"#1C1C1A"}}>
+                    <input type="checkbox" checked={draft.show_cassa !== false} onChange={(e)=>setDraft({...draft,show_cassa:e.target.checked})} style={{width:15,height:15,accentColor:"#B03A2E",cursor:"pointer"}}/>
+                    <span>🏠 Cassa</span>
+                  </label>
+                  <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:".85rem",color:"#1C1C1A"}}>
+                    <input type="checkbox" checked={draft.show_kiosk === true} onChange={(e)=>setDraft({...draft,show_kiosk:e.target.checked})} style={{width:15,height:15,accentColor:"#B03A2E",cursor:"pointer"}}/>
+                    <span>🪑 Kiosk</span>
+                  </label>
+                  <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:".85rem",color:"#1C1C1A"}}>
+                    <input type="checkbox" checked={draft.show_online === true} onChange={(e)=>setDraft({...draft,show_online:e.target.checked})} style={{width:15,height:15,accentColor:"#B03A2E",cursor:"pointer"}}/>
+                    <span>🌐 Online</span>
+                  </label>
+                </div>
               </div>
             </div>
             <div className="modal__foot">

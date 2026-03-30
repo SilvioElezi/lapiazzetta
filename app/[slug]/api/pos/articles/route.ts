@@ -43,8 +43,9 @@ export async function GET(
     const [{ data: rawArticles, error: aErr }, { data: vatRates, error: vErr }] = await Promise.all([
       supabaseAdmin
         .from("articles")
-        .select("id, code, name, price, category, vat_rate_id, active")
+        .select("id, code, name, price, category, vat_rate_id, active, show_cassa")
         .eq("business_id", bid)
+        .eq("show_cassa", true)
         .order("category", { nullsFirst: false })
         .order("name"),
       supabaseAdmin
@@ -61,7 +62,7 @@ export async function GET(
 
     barpro = (rawArticles || [])
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .filter((a: any) => a.active !== false)
+      .filter((a: any) => a.active !== false && a.show_cassa !== false)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .map((a: any) => ({
         id:       String(a.id),
@@ -85,7 +86,8 @@ export async function GET(
 
   try {
     // Try with main_category; if column doesn't exist yet, fall back gracefully
-    let menuCats: Array<{ category: string; items: unknown; main_category?: string | null }> | null = null;
+    type MenuCatRow = { category: string; items: unknown; main_category?: string | null };
+    let menuCats: MenuCatRow[] = [];
     const r1 = await supabaseAdmin
       .from("menu")
       .select("category, items, main_category")
@@ -99,19 +101,20 @@ export async function GET(
         .select("category, items")
         .eq("business_id", bid)
         .order("sort_order", { ascending: true });
-      menuCats = (r2.data ?? []) as typeof menuCats;
+      menuCats = (r2.data ?? []) as MenuCatRow[];
       menuErr = r2.error?.message ?? null;
     } else {
-      menuCats = (r1.data ?? []) as typeof menuCats;
+      menuCats = (r1.data ?? []) as MenuCatRow[];
     }
 
-    for (const cat of menuCats || []) {
+    for (const cat of menuCats) {
       const section = (cat.main_category as string | null) ?? sectionsConfig.find(s => s.name !== "Bar")?.name ?? "Pizzeria";
       menuCatSection[`menu_${cat.category}`] = section;
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       for (const item of (cat.items as any[]) || []) {
         if (item.active === false) continue;
+        if (item.show_cassa === false) continue;
         menuItems.push({
           id:       `menu_${item.id}`,
           code:     `menu_${item.id}`,

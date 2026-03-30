@@ -66,6 +66,9 @@ export type MenuItem = {
   image_url?: string;
   active: boolean;
   options?: ProductOptions;
+  show_cassa?: boolean;
+  show_online?: boolean;
+  show_kiosk?: boolean;
 };
 
 export type MenuCategory = {

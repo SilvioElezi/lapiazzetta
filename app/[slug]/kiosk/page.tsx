@@ -76,7 +76,9 @@ export default async function KioskPage({
 
   const menu = (menuRows ?? []).map((row) => ({
     ...row,
-    items: ((row.items as { active?: boolean }[]) ?? []).filter((i) => i.active !== false),
+    items: ((row.items as { active?: boolean; show_kiosk?: boolean }[]) ?? []).filter(
+      (i) => i.active !== false && i.show_kiosk !== false
+    ),
   }));
 
   return (
