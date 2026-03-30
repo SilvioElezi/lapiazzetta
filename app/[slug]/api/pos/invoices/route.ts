@@ -40,7 +40,7 @@ export async function POST(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params;
-  const { table_id, employee_id, items, subtotal, vat_amount, total, status = "paid" } =
+  const { table_id, employee_id, items, subtotal, vat_amount, total, status = "paid", payment_method: pm = "cash" } =
     await req.json();
 
   if (!items?.length) {
@@ -81,7 +81,7 @@ export async function POST(
       vat_amount,
       total,
       status,
-      payment_method: "cash",
+      payment_method: pm,
       invoice_type:   "sale",
       completed_at:   status === "paid" ? new Date().toISOString() : null,
     })

@@ -40,8 +40,9 @@ function calcTotals(cart: CartItem[]) {
 // ─── Types ────────────────────────────────────────────────────────────────────
 type Article  = { id: string; code: string; name: string; price: number; category: string; vat_rate: number; };
 type CartItem = { article: Article; qty: number; };
-type OpenInv  = { id: string; table_id: string | null; total: number; };
-type PosTab   = "cassa" | "orders" | "place-order" | "menu" | "tables" | "settings" | "shifts" | "shift";
+type InvItem  = { id: string; article_name: string; quantity: number; unit_price: number; vat_rate: number; total_price: number; };
+type OpenInv  = { id: string; table_id: string | null; total: number; invoice_items?: InvItem[]; };
+type PosTab   = "cassa" | "orders" | "menu" | "tables" | "settings" | "shifts" | "shift";
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 function LoginScreen({ onLogin, slug }: { onLogin: (u: StaffUser) => void; slug: string }) {
@@ -410,7 +411,7 @@ function MenuTab({ slug }: { slug: string }) {
   );
 }
 
-// ─── PLACE ORDER TAB ──────────────────────────────────────────────────────────
+// ─── PLACE ORDER TAB (kept for delivery tab — table ordering is now in Cassa) ──
 function PlaceOrderTab({ slug }: { slug: string }) {
   const [orderType, setOrderType] = useState<"table"|"delivery">("table");
   const [tables, setTables]       = useState<KioskTable[]>([]);
@@ -782,7 +783,10 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
   const [cart,         setCart]         = useState<CartItem[]>([]);
   const [payMethod,    setPayMethod]    = useState<"cash"|"card">("cash");
   const [paying,       setPaying]       = useState(false);
+  const [sending,      setSending]      = useState(false);
   const [payErr,       setPayErr]       = useState("");
+  const [payModal,     setPayModal]     = useState(false);
+  const [openInvId,    setOpenInvId]    = useState<string | null>(null);
   const [loading,      setLoading]      = useState(true);
   const [articleError, setArticleError] = useState<string | null>(null);
 
@@ -831,24 +835,88 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
     setCart(prev => { const idx=prev.findIndex(c=>c.article.id===a.id); if (idx>=0) { const n=[...prev]; n[idx]={...n[idx],qty:n[idx].qty+1}; return n; } return [...prev,{article:a,qty:1}]; });
   }
   function changeQty(id: string, delta: number) { setCart(prev=>prev.map(c=>c.article.id===id?{...c,qty:c.qty+delta}:c).filter(c=>c.qty>0)); }
-  function selectTable(t: KioskTable) { setSelTable(t); setCart([]); setPayErr(""); setSelCat("all"); setSearch(""); }
+  function selectTable(t: KioskTable) {
+    const inv = invMap[t.id];
+    if (inv?.invoice_items?.length) {
+      // Load existing items from open invoice into cart
+      const loaded: CartItem[] = inv.invoice_items.map(ii => {
+        const art = articles.find(a => a.name === ii.article_name) ?? {
+          id: `inv_${ii.id}`, code: "", name: ii.article_name,
+          price: ii.unit_price, category: "", vat_rate: ii.vat_rate,
+        };
+        return { article: art, qty: ii.quantity };
+      });
+      setCart(loaded);
+      setOpenInvId(inv.id);
+    } else {
+      setCart([]);
+      setOpenInvId(null);
+    }
+    setSelTable(t); setPayErr(""); setSelCat("all"); setSearch("");
+  }
 
-  async function handlePay() {
-    if (!selTable||cart.length===0) return;
+  function buildItems() {
+    return cart.map(c => ({
+      article_id:   (c.article.id.startsWith("menu_")||c.article.id.startsWith("inv_")) ? null : c.article.id,
+      article_code: c.article.code,
+      article_name: c.article.name,
+      quantity:     c.qty,
+      unit_price:   c.article.price,
+      vat_rate:     c.article.vat_rate,
+      total_price:  +(c.article.price * c.qty).toFixed(2),
+    }));
+  }
+
+  async function sendToTable() {
+    if (!selTable || cart.length === 0) return;
+    setSending(true); setPayErr("");
+    try {
+      if (openInvId) {
+        const res = await fetch(`/${slug}/api/pos/invoices/${openInvId}`, {
+          method: "PATCH", headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ action:"update_items", items:buildItems(), subtotal:+totals.subtotal.toFixed(2), vat_amount:+totals.vat_amount.toFixed(2), total:+totals.total.toFixed(2) }),
+        });
+        const data = await res.json();
+        if (!res.ok) { setPayErr(data.error ?? "Errore aggiornamento"); return; }
+      } else {
+        const res = await fetch(`/${slug}/api/pos/invoices`, {
+          method: "POST", headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ table_id:selTable.id, employee_id:user?.id, items:buildItems(), subtotal:+totals.subtotal.toFixed(2), vat_amount:+totals.vat_amount.toFixed(2), total:+totals.total.toFixed(2), status:"open" }),
+        });
+        const data = await res.json();
+        if (!res.ok) { setPayErr(data.error ?? "Errore"); return; }
+        setOpenInvId(data.invoice_id);
+      }
+      await loadTables();
+    } catch { setPayErr("Errore di connessione"); } finally { setSending(false); }
+  }
+
+  async function closeTable(method: "cash"|"card") {
+    if (!selTable || cart.length === 0) return;
     setPaying(true); setPayErr("");
     try {
-      const res = await fetch(`/${slug}/api/pos/invoices`, {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          table_id: selTable.id, employee_id: user?.id,
-          items: cart.map(c=>({ article_id:c.article.id.startsWith("menu_")?null:c.article.id, article_code:c.article.code, article_name:c.article.name, quantity:c.qty, unit_price:c.article.price, vat_rate:c.article.vat_rate, total_price:+(c.article.price*c.qty).toFixed(2) })),
-          subtotal:+totals.subtotal.toFixed(2), vat_amount:+totals.vat_amount.toFixed(2), total:+totals.total.toFixed(2),
-          status:"paid", payment_method:payMethod,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setPayErr(data.error??"Errore"); return; }
-      setCart([]); setSelTable(null); await loadTables();
+      if (openInvId) {
+        // Update items first, then close
+        await fetch(`/${slug}/api/pos/invoices/${openInvId}`, {
+          method:"PATCH", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ action:"update_items", items:buildItems(), subtotal:+totals.subtotal.toFixed(2), vat_amount:+totals.vat_amount.toFixed(2), total:+totals.total.toFixed(2) }),
+        });
+        const res = await fetch(`/${slug}/api/pos/invoices/${openInvId}`, {
+          method:"PATCH", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ status:"paid", payment_method:method }),
+        });
+        const data = await res.json();
+        if (!res.ok) { setPayErr(data.error ?? "Errore pagamento"); return; }
+      } else {
+        const res = await fetch(`/${slug}/api/pos/invoices`, {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({ table_id:selTable.id, employee_id:user?.id, items:buildItems(), subtotal:+totals.subtotal.toFixed(2), vat_amount:+totals.vat_amount.toFixed(2), total:+totals.total.toFixed(2), status:"paid", payment_method:method }),
+        });
+        const data = await res.json();
+        if (!res.ok) { setPayErr(data.error ?? "Errore"); return; }
+      }
+      setCart([]); setSelTable(null); setOpenInvId(null); setPayModal(false);
+      await loadTables();
     } catch { setPayErr("Errore di connessione"); } finally { setPaying(false); }
   }
 
@@ -876,9 +944,6 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
           <button onClick={()=>setTab("orders")} style={{ padding:"6px 12px", background:tab==="orders"?"rgba(22,163,74,.9)":"rgba(253,246,236,.08)", border:"none", color:tab==="orders"?"#fff":"rgba(253,246,236,.7)", borderRadius:8, cursor:"pointer", fontSize:".8rem", fontWeight:tab==="orders"?700:500 }}>📋 Ordini</button>
           {user.role==="delivery" && (
             <button onClick={()=>setTab("shift")} style={{ padding:"6px 12px", background:tab==="shift"?"rgba(22,163,74,.9)":"rgba(253,246,236,.08)", border:"none", color:tab==="shift"?"#fff":"rgba(253,246,236,.7)", borderRadius:8, cursor:"pointer", fontSize:".8rem", fontWeight:tab==="shift"?700:500 }}>🛵 Turno</button>
-          )}
-          {(user.role==="admin"||user.role==="reception") && (
-            <button onClick={()=>setTab("place-order")} style={{ padding:"6px 12px", background:tab==="place-order"?"rgba(22,163,74,.9)":"rgba(253,246,236,.08)", border:"none", color:tab==="place-order"?"#fff":"rgba(253,246,236,.7)", borderRadius:8, cursor:"pointer", fontSize:".8rem", fontWeight:tab==="place-order"?700:500 }}>🧾 Ordine</button>
           )}
           {user.role==="admin" && (<>
             <button onClick={()=>setTab("shifts")} style={{ padding:"6px 12px", background:tab==="shifts"?"rgba(22,163,74,.9)":"rgba(253,246,236,.08)", border:"none", color:tab==="shifts"?"#fff":"rgba(253,246,236,.7)", borderRadius:8, cursor:"pointer", fontSize:".8rem", fontWeight:tab==="shifts"?700:500 }}>🛵 Turni</button>
@@ -969,21 +1034,26 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
                     <div style={{ display:"flex", justifyContent:"space-between", color:"#f1f5f9", fontSize:18, fontWeight:700, borderTop:"1px solid #1e293b", paddingTop:6, marginTop:4 }}><span>TOTALE</span><span>{eur(totals.total)}</span></div>
                   </div>
                 )}
-                {cart.length>0 && (
-                  <div style={{ display:"flex", gap:6, padding:"8px 12px", borderTop:"1px solid #0f172a" }}>
-                    {(["cash","card"] as const).map(m => (
-                      <button key={m} onClick={()=>setPayMethod(m)} style={{ flex:1, padding:"7px 0", borderRadius:6, fontSize:12, fontWeight:600, cursor:"pointer", background:payMethod===m?"#1d4ed8":"#0f172a", color:payMethod===m?"#fff":"#64748b", border:`1px solid ${payMethod===m?"#1d4ed8":"#334155"}` }}>
-                        {m==="cash"?"💵 Contanti":"💳 Carta"}
-                      </button>
-                    ))}
-                  </div>
-                )}
                 {payErr && <p style={{ color:"#f87171", fontSize:11, textAlign:"center", margin:"0 12px 6px" }}>{payErr}</p>}
-                <div style={{ display:"flex", gap:8, padding:"10px 12px", borderTop:"1px solid #0f172a" }}>
-                  <button onClick={()=>{ setSelTable(null); setCart([]); }} style={{ flex:1, background:"#0f172a", border:"1px solid #334155", color:"#94a3b8", borderRadius:8, padding:"10px 0", fontSize:13, cursor:"pointer" }}>← Chiudi</button>
-                  <button onClick={handlePay} disabled={paying||cart.length===0} style={{ flex:2, background:cart.length>0?"#16a34a":"#1e293b", border:"none", color:cart.length>0?"#fff":"#475569", borderRadius:8, padding:"10px 0", fontSize:14, fontWeight:700, cursor:cart.length>0?"pointer":"not-allowed" }}>
-                    {paying?"Salvo…":`💰 Paga${cart.length>0?"  "+eur(totals.total):""}`}
-                  </button>
+                <div style={{ display:"flex", flexDirection:"column", gap:6, padding:"10px 12px", borderTop:"1px solid #0f172a" }}>
+                  <div style={{ display:"flex", gap:6 }}>
+                    <button onClick={()=>{ setSelTable(null); setOpenInvId(null); setCart([]); }} style={{ flex:1, background:"#0f172a", border:"1px solid #334155", color:"#94a3b8", borderRadius:8, padding:"10px 0", fontSize:12, cursor:"pointer" }}>← Deseleziona</button>
+                    {cart.length>0 && (
+                      <button onClick={sendToTable} disabled={sending} style={{ flex:2, background:"#92400e", border:"none", color:"#fcd34d", borderRadius:8, padding:"10px 0", fontSize:13, fontWeight:700, cursor:"pointer" }}>
+                        {sending?"Invio…":"📤 Invia al tavolo"}
+                      </button>
+                    )}
+                  </div>
+                  {cart.length>0 && (
+                    <button onClick={()=>setPayModal(true)} style={{ background:"#16a34a", border:"none", color:"#fff", borderRadius:8, padding:"12px 0", fontSize:15, fontWeight:700, cursor:"pointer" }}>
+                      🔒 Chiudi tavolo · {eur(totals.total)}
+                    </button>
+                  )}
+                  {openInvId && cart.length===0 && (
+                    <button onClick={()=>setPayModal(true)} style={{ background:"#16a34a", border:"none", color:"#fff", borderRadius:8, padding:"12px 0", fontSize:15, fontWeight:700, cursor:"pointer" }}>
+                      🔒 Chiudi tavolo · {eur(invMap[selTable!.id]?.total ?? 0)}
+                    </button>
+                  )}
                 </div>
               </>)}
             </div>
@@ -1005,6 +1075,37 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
             })}
             {tables.filter(t=>t.active).length===0 && <span style={{ color:"#475569", fontSize:12 }}>Nessun tavolo — aggiungili dalla tab Tavoli</span>}
           </div>
+
+          {/* Payment modal */}
+          {payModal && (
+            <>
+              <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.75)", zIndex:300 }} onClick={()=>!paying&&setPayModal(false)}/>
+              <div style={{ position:"fixed", top:"50%", left:"50%", transform:"translate(-50%,-50%)", zIndex:301, background:"#1e293b", borderRadius:18, padding:28, width:340, boxShadow:"0 30px 80px #0009", display:"flex", flexDirection:"column", gap:16 }}>
+                <div>
+                  <p style={{ color:"#f1f5f9", fontWeight:700, fontSize:20, marginBottom:4 }}>Metodo di pagamento</p>
+                  <p style={{ color:"#64748b", fontSize:13 }}>{selTable?.name} · {eur(cart.length>0?totals.total:(invMap[selTable!.id]?.total??0))}</p>
+                </div>
+                <div style={{ display:"flex", gap:12 }}>
+                  {(["cash","card"] as const).map(m => (
+                    <button key={m} onClick={()=>setPayMethod(m)}
+                      style={{ flex:1, padding:"20px 0", borderRadius:12, fontSize:28, cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:6, background:payMethod===m?"#1d4ed8":"#0f172a", border:`2px solid ${payMethod===m?"#60a5fa":"#334155"}`, color:"#fff" }}>
+                      <span>{m==="cash"?"💵":"💳"}</span>
+                      <span style={{ fontSize:12, fontWeight:600, color:payMethod===m?"#bfdbfe":"#64748b" }}>{m==="cash"?"Contanti":"Bancomat"}</span>
+                    </button>
+                  ))}
+                </div>
+                {payErr && <p style={{ color:"#f87171", fontSize:12, textAlign:"center" }}>{payErr}</p>}
+                <button onClick={()=>closeTable(payMethod)} disabled={paying}
+                  style={{ padding:"16px 0", background:"#16a34a", color:"#fff", border:"none", borderRadius:12, fontSize:17, fontWeight:700, cursor:paying?"wait":"pointer" }}>
+                  {paying ? "Salvo…" : `✅ Conferma pagamento${payMethod==="cash"?" — Contanti":" — Bancomat"}`}
+                </button>
+                <button onClick={()=>setPayModal(false)} disabled={paying}
+                  style={{ padding:"10px 0", background:"transparent", color:"#64748b", border:"none", fontSize:13, cursor:"pointer" }}>
+                  Annulla
+                </button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -1012,9 +1113,8 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
       {!isCassa && (
         <div style={{ flex:1, overflowY:"auto" }}>
           <div style={{ maxWidth:1200, margin:"0 auto", padding:20 }}>
-            {tab==="orders"      && <OrdersTab role={user.role} slug={slug} activeShift={activeShift} onShiftUpdated={fetchActiveShift} staffUser={user}/>}
-            {tab==="place-order" && (user.role==="reception"||user.role==="admin") && <PlaceOrderTab slug={slug}/>}
-            {tab==="shift"       && user.role==="delivery" && <ShiftTab slug={slug} staffId={String(user.id)} staffName={user.name}/>}
+            {tab==="orders"  && <OrdersTab role={user.role} slug={slug} activeShift={activeShift} onShiftUpdated={fetchActiveShift} staffUser={user}/>}
+            {tab==="shift"   && user.role==="delivery" && <ShiftTab slug={slug} staffId={String(user.id)} staffName={user.name}/>}
             {tab==="shifts"      && user.role==="admin" && <AdminShiftsTab slug={slug}/>}
             {tab==="menu"        && user.role==="admin" && <MenuTab slug={slug}/>}
             {tab==="tables"      && user.role==="admin" && <TablesTab slug={slug}/>}
