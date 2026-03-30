@@ -21,8 +21,8 @@ type MenuCategory = { id?: number; category: string; emoji: string; items: MenuI
 
 type Props = {
   slug: string;
-  tableName: string;
-  tableToken: string;
+  tableName: string | null;
+  tableToken: string | null;
   businessName: string;
   logoUrl?: string | null;
   menu: MenuCategory[];
@@ -171,7 +171,7 @@ export default function KioskView({ slug, tableName, tableToken, businessName, l
         <h1 style={{ fontFamily: "Georgia,serif", fontSize: "2.2rem", color: "#FDF6EC", fontWeight: 700 }}>Ordine ricevuto!</h1>
         <p style={{ fontSize: "1rem", color: "#B0ACA5" }}>Il tuo ordine <strong style={{ color: "#FDF6EC" }}>#{orderId}</strong> è in preparazione.</p>
         <div style={{ background: "#2A2A28", borderRadius: 20, padding: "24px 40px", display: "flex", flexDirection: "column", gap: 12, alignItems: "center", minWidth: 300, maxWidth: 480 }}>
-          <p style={{ color: "#B03A2E", fontWeight: 700, fontSize: "1rem" }}>🪑 {tableName}</p>
+          {tableName && <p style={{ color: "#B03A2E", fontWeight: 700, fontSize: "1rem" }}>🪑 {tableName}</p>}
           <ul style={{ listStyle: "none", textAlign: "left", display: "flex", flexDirection: "column", gap: 6, width: "100%" }}>
             {doneCart.map(item => (
               <li key={item.name} style={{ fontSize: ".9rem", color: "#B0ACA5", display: "flex", justifyContent: "space-between" }}>
@@ -203,10 +203,12 @@ export default function KioskView({ slug, tableName, tableToken, businessName, l
       <header style={{ background: "#B03A2E", display: "flex", alignItems: "center", padding: "0 24px", gap: 16, flexShrink: 0 }}>
         {logoUrl && <img src={logoUrl} alt="" style={{ width: 38, height: 38, borderRadius: "50%", objectFit: "cover", border: "2px solid rgba(255,255,255,.3)" }} />}
         <span style={{ fontFamily: "Georgia,serif", fontSize: "1.15rem", fontWeight: 700, color: "#FDF6EC", flex: 1 }}>{businessName}</span>
-        <div style={{ background: "rgba(0,0,0,.2)", borderRadius: 12, padding: "8px 18px", display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ fontSize: "1.1rem" }}>🪑</span>
-          <span style={{ color: "#FDF6EC", fontWeight: 700, fontSize: "1rem" }}>{tableName}</span>
-        </div>
+        {tableName && (
+          <div style={{ background: "rgba(0,0,0,.2)", borderRadius: 12, padding: "8px 18px", display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: "1.1rem" }}>🪑</span>
+            <span style={{ color: "#FDF6EC", fontWeight: 700, fontSize: "1rem" }}>{tableName}</span>
+          </div>
+        )}
       </header>
 
       {/* ── BODY ── */}
@@ -449,10 +451,10 @@ export default function KioskView({ slug, tableName, tableToken, businessName, l
           <div style={{ position: "fixed", inset: 0, background: "rgba(28,28,26,.75)", zIndex: 100, backdropFilter: "blur(4px)" }} onClick={() => setCheckoutOpen(false)} />
           <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 101, background: "#fff", borderRadius: 20, width: "90%", maxWidth: 520, boxShadow: "0 20px 60px rgba(0,0,0,.35)", overflow: "hidden" }}>
             <div style={{ background: "#B03A2E", padding: "20px 24px", display: "flex", alignItems: "center", gap: 14 }}>
-              <span style={{ fontSize: "1.6rem" }}>🪑</span>
+              <span style={{ fontSize: "1.6rem" }}>{tableName ? "🪑" : "🧾"}</span>
               <div>
-                <h3 style={{ fontFamily: "Georgia,serif", fontSize: "1.15rem", fontWeight: 700, color: "#FDF6EC" }}>{tableName}</h3>
-                <p style={{ fontSize: ".8rem", color: "rgba(253,246,236,.7)" }}>Conferma il tuo ordine</p>
+                <h3 style={{ fontFamily: "Georgia,serif", fontSize: "1.15rem", fontWeight: 700, color: "#FDF6EC" }}>{tableName ?? "Kiosk"}</h3>
+                <p style={{ fontSize: ".8rem", color: "rgba(253,246,236,.7)" }}>Conferma il tuo ordine — paga alla cassa</p>
               </div>
             </div>
             <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16, maxHeight: "70vh", overflowY: "auto" }}>

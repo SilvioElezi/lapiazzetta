@@ -25,16 +25,6 @@ export default async function KioskPage({
     gap: 16,
   };
 
-  if (!token) {
-    return (
-      <div style={centered}>
-        <p style={{ fontSize: "4rem" }}>🔗</p>
-        <h1 style={{ fontSize: "1.4rem", fontWeight: 700 }}>Scansiona il QR code del tuo tavolo</h1>
-        <p style={{ fontSize: "1rem", color: "#7A7770" }}>Chiedi al personale il QR code per ordinare dal tuo tavolo.</p>
-      </div>
-    );
-  }
-
   const { data: business } = await supabaseAdmin
     .from("businesses")
     .select("id, slug, name, logo_url")
@@ -50,22 +40,23 @@ export default async function KioskPage({
     );
   }
 
-  const { data: table } = await supabaseAdmin
-    .from("tables")
-    .select("id, name, token")
-    .eq("token", token)
-    .eq("business_id", business.id)
-    .eq("active", true)
-    .maybeSingle();
+  // Look up table only if a token was provided
+  let tableName: string | null = null;
+  let tableToken: string | null = null;
 
-  if (!table) {
-    return (
-      <div style={centered}>
-        <p style={{ fontSize: "3rem" }}>❌</p>
-        <h1 style={{ fontSize: "1.2rem", fontWeight: 700 }}>Tavolo non valido o disattivato</h1>
-        <p style={{ fontSize: ".9rem", color: "#7A7770" }}>Contatta il personale per assistenza.</p>
-      </div>
-    );
+  if (token) {
+    const { data: table } = await supabaseAdmin
+      .from("tables")
+      .select("id, name, token")
+      .eq("token", token)
+      .eq("business_id", business.id)
+      .eq("active", true)
+      .maybeSingle();
+
+    if (table) {
+      tableName  = table.name;
+      tableToken = table.token;
+    }
   }
 
   const { data: menuRows } = await supabaseAdmin
@@ -84,8 +75,8 @@ export default async function KioskPage({
   return (
     <KioskView
       slug={slug}
-      tableName={table.name}
-      tableToken={table.token}
+      tableName={tableName}
+      tableToken={tableToken}
       businessName={business.name}
       logoUrl={business.logo_url ?? null}
       menu={menu}

@@ -22,17 +22,18 @@ export async function POST(
   const body = await req.json();
   const { tableToken, clientName, items, total, notes } = body;
 
-  if (!tableToken) return NextResponse.json({ error: "Token tavolo mancante" }, { status: 400 });
-
-  const { data: table } = await supabaseAdmin
-    .from("tables")
-    .select("id, name")
-    .eq("token", tableToken)
-    .eq("business_id", business.id)
-    .eq("active", true)
-    .maybeSingle();
-
-  if (!table) return NextResponse.json({ error: "Tavolo non valido o non attivo" }, { status: 400 });
+  // Table lookup is optional — walk-in kiosk has no token
+  let table: { id: string; name: string } | null = null;
+  if (tableToken) {
+    const { data } = await supabaseAdmin
+      .from("tables")
+      .select("id, name")
+      .eq("token", tableToken)
+      .eq("business_id", business.id)
+      .eq("active", true)
+      .maybeSingle();
+    table = data;
+  }
 
   const allItems = [...(items ?? [])];
   if (notes?.trim()) {
@@ -61,7 +62,7 @@ export async function POST(
       invoice_number,
       daily_sequence: seq,
       invoice_date:   today,
-      table_id:       table.id,
+      table_id:       table?.id ?? null,
       subtotal:       invoiceTotal - vatAmount,
       vat_amount:     vatAmount,
       total:          invoiceTotal,
@@ -98,13 +99,13 @@ export async function POST(
     business_id: business.id,
     client_name: clientName?.trim() || "Ospite",
     phone: "",
-    address: table.name,
+    address: table?.name ?? "Kiosk",
     items: allItems,
     total: invoiceTotal,
     status: "new",
     confirm_code: "",
     placed_at: new Date().toISOString(),
-    table_name: table.name,
+    table_name: table?.name ?? null,
     order_type: "kiosk",
     invoice_id: invoice.id,
   };
