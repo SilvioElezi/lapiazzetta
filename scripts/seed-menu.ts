@@ -25,13 +25,28 @@ async function seed() {
 
   console.log(`Seeding ${categories.length} categories...`);
 
-  // Clear existing menu
-  await supabase.from("menu").delete().neq("id", 0);
+  // Resolve business_id
+  const slug = process.env.BUSINESS_SLUG || "lapiazzetta";
+  const { data: biz, error: bizErr } = await supabase
+    .from("businesses")
+    .select("id")
+    .eq("slug", slug)
+    .single();
+  if (bizErr || !biz) {
+    console.error("Business not found:", bizErr?.message);
+    process.exit(1);
+  }
+  const business_id = biz.id;
+  console.log(`Business: ${slug} (${business_id})`);
+
+  // Clear existing menu for this business
+  await supabase.from("menu").delete().eq("business_id", business_id);
 
   // Insert each category
   for (let i = 0; i < categories.length; i++) {
     const cat = categories[i];
     const { error } = await supabase.from("menu").insert({
+      business_id,
       category: cat.category,
       emoji: cat.emoji,
       sort_order: i,
