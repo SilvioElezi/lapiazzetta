@@ -3,445 +3,98 @@ import { use, useEffect, useState, useCallback, useMemo } from "react";
 import type { StaffUser, KioskTable } from "../../../lib/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Article = {
-  id: string;
-  code: string;
-  name: string;
-  price: number;
-  category: string | null;
-  vat_rate: number;
-};
-
-type CartItem = {
-  article: Article;
-  qty: number;
-};
-
-type OpenInvoice = {
-  id: string;
-  table_id: string | null;
-  total: number;
-};
+type Article  = { id: string; code: string; name: string; price: number; category: string; vat_rate: number; };
+type CartItem = { article: Article; qty: number; };
+type OpenInv  = { id: string; table_id: string | null; total: number; };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-function eur(n: number) {
-  return "€\u00a0" + n.toFixed(2).replace(".", ",");
-}
+const eur = (n: number) => "€ " + n.toFixed(2).replace(".", ",");
 
-function categoryLabel(cat: string | null) {
-  if (!cat || cat === "0") return "Varie";
-  return `Cat. ${cat}`;
-}
+// Italian category names mapped from BarPRO porosi_id
+// Update these once the Oracle porosia table IDs are confirmed
+const CAT_LABELS: Record<string, string> = {
+  "1":  "Caffetteria",
+  "2":  "Bibite",
+  "3":  "Birra",
+  "4":  "Gin / Tequila",
+  "5":  "Whisky",
+  "6":  "Vodka",
+  "7":  "Amaro",
+  "8":  "Vino",
+  "9":  "Liquori",
+  "10": "Cognac",
+  "11": "Rum",
+  "12": "Long Drinks",
+  "13": "Cocktail",
+  "14": "Shots",
+  "0":  "Varie",
+};
+const catLabel = (c: string) => CAT_LABELS[c] ?? `Cat. ${c}`;
 
 function calcTotals(cart: CartItem[]) {
-  const total    = cart.reduce((s, c) => s + c.article.price * c.qty, 0);
-  // Group VAT by rate (prices are VAT-inclusive)
-  const vatBreakdown: Record<number, number> = {};
+  const total      = cart.reduce((s, c) => s + c.article.price * c.qty, 0);
+  const vatByRate: Record<number, number> = {};
   for (const c of cart) {
-    const rate   = c.article.vat_rate;
-    const vatAmt = (c.article.price * c.qty) * rate / (100 + rate);
-    vatBreakdown[rate] = (vatBreakdown[rate] ?? 0) + vatAmt;
+    const r = c.article.vat_rate;
+    vatByRate[r] = (vatByRate[r] ?? 0) + (c.article.price * c.qty) * r / (100 + r);
   }
-  const vat_amount = Object.values(vatBreakdown).reduce((s, v) => s + v, 0);
-  const subtotal   = total - vat_amount;
-  return { total, subtotal, vat_amount, vatBreakdown };
+  const vat_amount = Object.values(vatByRate).reduce((s, v) => s + v, 0);
+  return { total, subtotal: total - vat_amount, vat_amount, vatByRate };
 }
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 function LoginScreen({ onLogin, slug }: { onLogin: (u: StaffUser) => void; slug: string }) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [error,    setError]    = useState("");
-  const [loading,  setLoading]  = useState(false);
-
+  const [u, setU] = useState(""); const [p, setP] = useState("");
+  const [err, setErr] = useState(""); const [loading, setLoading] = useState(false);
   const login = async () => {
-    if (!username || !password) return;
-    setLoading(true); setError("");
+    if (!u || !p) return; setLoading(true); setErr("");
     try {
-      const res  = await fetch(`/${slug}/api/auth`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) setError(data.error ?? "Errore");
-      else {
-        const user = { ...data.user, businesses: data.businesses ?? [] };
-        localStorage.setItem("shop_user", JSON.stringify(user));
-        onLogin(user);
-      }
-    } catch { setError("Errore di connessione"); }
-    finally { setLoading(false); }
+      const res = await fetch(`/${slug}/api/auth`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ username:u, password:p }) });
+      const d = await res.json();
+      if (!res.ok) { setErr(d.error ?? "Errore"); }
+      else { const user = { ...d.user, businesses: d.businesses ?? [] }; localStorage.setItem("shop_user", JSON.stringify(user)); onLogin(user); }
+    } catch { setErr("Errore di connessione"); } finally { setLoading(false); }
   };
-
+  const S: React.CSSProperties = { width:"100%", background:"#0f172a", border:"1px solid #334155", borderRadius:8, padding:"10px 14px", color:"#f1f5f9", fontSize:15, marginBottom:12, boxSizing:"border-box" };
   return (
     <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"#0f172a" }}>
       <div style={{ background:"#1e293b", borderRadius:16, padding:40, width:340, boxShadow:"0 25px 50px #0008" }}>
         <div style={{ fontSize:48, textAlign:"center", marginBottom:8 }}>🍕</div>
-        <h1 style={{ color:"#f1f5f9", textAlign:"center", fontSize:22, fontWeight:700, margin:"0 0 4px" }}>Cassa POS</h1>
-        <p style={{ color:"#64748b", textAlign:"center", fontSize:13, marginBottom:28 }}>Accesso riservato al personale</p>
-        <input
-          style={{ width:"100%", background:"#0f172a", border:"1px solid #334155", borderRadius:8, padding:"10px 14px", color:"#f1f5f9", fontSize:15, marginBottom:12, boxSizing:"border-box" }}
-          placeholder="Username" value={username} autoFocus
-          onChange={e => setUsername(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && login()}
-        />
-        <input
-          style={{ width:"100%", background:"#0f172a", border:"1px solid #334155", borderRadius:8, padding:"10px 14px", color:"#f1f5f9", fontSize:15, marginBottom:20, boxSizing:"border-box" }}
-          placeholder="Password" type="password" value={password}
-          onChange={e => setPassword(e.target.value)}
-          onKeyDown={e => e.key === "Enter" && login()}
-        />
-        <button
-          onClick={login} disabled={loading}
-          style={{ width:"100%", background:"#3b82f6", color:"#fff", border:"none", borderRadius:8, padding:"12px 0", fontSize:15, fontWeight:600, cursor:"pointer" }}
-        >
+        <h1 style={{ color:"#f1f5f9", textAlign:"center", fontSize:22, fontWeight:700, margin:"0 0 24px" }}>Cassa POS</h1>
+        <input style={S} placeholder="Username" value={u} autoFocus onChange={e=>setU(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()} />
+        <input style={S} placeholder="Password" type="password" value={p} onChange={e=>setP(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()} />
+        <button onClick={login} disabled={loading} style={{ width:"100%", background:"#2563eb", color:"#fff", border:"none", borderRadius:8, padding:"12px 0", fontSize:15, fontWeight:600, cursor:"pointer" }}>
           {loading ? "Accesso…" : "Accedi"}
         </button>
-        {error && <p style={{ color:"#f87171", textAlign:"center", marginTop:12, fontSize:13 }}>{error}</p>}
+        {err && <p style={{ color:"#f87171", textAlign:"center", marginTop:12, fontSize:13 }}>{err}</p>}
       </div>
     </div>
   );
 }
 
-// ─── Table Grid ───────────────────────────────────────────────────────────────
-function TableGrid({
-  tables, openInvoices, onSelect, onRefresh,
-}: {
-  tables: KioskTable[];
-  openInvoices: OpenInvoice[];
-  onSelect: (t: KioskTable) => void;
-  onRefresh: () => void;
-}) {
-  const invoiceMap = useMemo(() => {
-    const m: Record<string, OpenInvoice> = {};
-    for (const inv of openInvoices) if (inv.table_id) m[inv.table_id] = inv;
-    return m;
-  }, [openInvoices]);
-
-  return (
-    <div style={{ padding:24 }}>
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
-        <h2 style={{ color:"#f1f5f9", fontSize:20, fontWeight:700, margin:0 }}>Tavoli</h2>
-        <button onClick={onRefresh} style={{ background:"#1e293b", border:"1px solid #334155", color:"#94a3b8", borderRadius:8, padding:"6px 14px", cursor:"pointer", fontSize:13 }}>
-          ↺ Aggiorna
-        </button>
-      </div>
-      {tables.length === 0 && (
-        <p style={{ color:"#64748b", textAlign:"center", marginTop:60 }}>
-          Nessun tavolo configurato. Aggiungili dal pannello Staff.
-        </p>
-      )}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))", gap:16 }}>
-        {tables.filter(t => t.active).map(t => {
-          const inv     = invoiceMap[t.id];
-          const occupied = !!inv;
-          return (
-            <button
-              key={t.id}
-              onClick={() => onSelect(t)}
-              style={{
-                background:  occupied ? "#1e3a2e" : "#1e293b",
-                border:      `2px solid ${occupied ? "#22c55e" : "#334155"}`,
-                borderRadius: 12,
-                padding:     "20px 16px",
-                cursor:      "pointer",
-                textAlign:   "center",
-                transition:  "transform 0.1s",
-              }}
-            >
-              <div style={{ fontSize:32, marginBottom:6 }}>🪑</div>
-              <div style={{ color:"#f1f5f9", fontWeight:700, fontSize:16 }}>{t.name}</div>
-              {occupied
-                ? <div style={{ color:"#22c55e", fontSize:13, marginTop:4, fontWeight:600 }}>{eur(inv.total)}</div>
-                : <div style={{ color:"#475569", fontSize:12, marginTop:4 }}>Libero</div>
-              }
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ─── POS View ─────────────────────────────────────────────────────────────────
-function POSView({
-  table, articles, onBack, onPaid, slug, staffId,
-}: {
-  table: KioskTable;
-  articles: Article[];
-  onBack: () => void;
-  onPaid: () => void;
-  slug: string;
-  staffId: number;
-}) {
-  const [cart,        setCart]        = useState<CartItem[]>([]);
-  const [search,      setSearch]      = useState("");
-  const [selCategory, setSelCategory] = useState<string>("all");
-  const [paying,      setPaying]      = useState(false);
-  const [payError,    setPayError]    = useState("");
-  const [payMethod,   setPayMethod]   = useState<"cash"|"card">("cash");
-
-  // Build category list
-  const categories = useMemo(() => {
-    const seen = new Set<string>();
-    for (const a of articles) seen.add(a.category ?? "0");
-    return Array.from(seen).sort((a, b) => Number(a) - Number(b));
-  }, [articles]);
-
-  // Filtered articles
-  const filtered = useMemo(() => {
-    return articles.filter(a => {
-      const matchCat = selCategory === "all" || a.category === selCategory;
-      const matchQ   = !search || a.name.toLowerCase().includes(search.toLowerCase());
-      return matchCat && matchQ;
-    });
-  }, [articles, selCategory, search]);
-
-  const totals = useMemo(() => calcTotals(cart), [cart]);
-
-  function addArticle(a: Article) {
-    setCart(prev => {
-      const idx = prev.findIndex(c => c.article.id === a.id);
-      if (idx >= 0) {
-        const next = [...prev];
-        next[idx] = { ...next[idx], qty: next[idx].qty + 1 };
-        return next;
-      }
-      return [...prev, { article: a, qty: 1 }];
-    });
-  }
-
-  function changeQty(articleId: string, delta: number) {
-    setCart(prev => {
-      const next = prev.map(c =>
-        c.article.id === articleId ? { ...c, qty: c.qty + delta } : c
-      ).filter(c => c.qty > 0);
-      return next;
-    });
-  }
-
-  async function handlePay() {
-    if (cart.length === 0) return;
-    setPaying(true); setPayError("");
-    try {
-      const res = await fetch(`/${slug}/api/pos/invoices`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          table_id:     table.id,
-          employee_id:  staffId,
-          items:        cart.map(c => ({
-            article_id:   c.article.id,
-            article_code: c.article.code,
-            article_name: c.article.name,
-            quantity:     c.qty,
-            unit_price:   c.article.price,
-            vat_rate:     c.article.vat_rate,
-            total_price:  +(c.article.price * c.qty).toFixed(2),
-          })),
-          subtotal:     +totals.subtotal.toFixed(2),
-          vat_amount:   +totals.vat_amount.toFixed(2),
-          total:        +totals.total.toFixed(2),
-          status:       "paid",
-          payment_method: payMethod,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok) { setPayError(data.error ?? "Errore"); return; }
-      onPaid();
-    } catch { setPayError("Errore di connessione"); }
-    finally { setPaying(false); }
-  }
-
-  return (
-    <div style={{ display:"flex", height:"calc(100vh - 56px)", overflow:"hidden" }}>
-
-      {/* ── Left: Article selector ── */}
-      <div style={{ flex:1, display:"flex", flexDirection:"column", borderRight:"1px solid #1e293b", overflow:"hidden" }}>
-
-        {/* Search */}
-        <div style={{ padding:"12px 16px", borderBottom:"1px solid #1e293b" }}>
-          <input
-            style={{ width:"100%", background:"#1e293b", border:"1px solid #334155", borderRadius:8, padding:"8px 12px", color:"#f1f5f9", fontSize:14, boxSizing:"border-box" }}
-            placeholder="🔍 Cerca articolo…"
-            value={search}
-            onChange={e => { setSearch(e.target.value); setSelCategory("all"); }}
-          />
-        </div>
-
-        {/* Category pills */}
-        <div style={{ display:"flex", gap:8, padding:"10px 16px", overflowX:"auto", borderBottom:"1px solid #1e293b", flexShrink:0 }}>
-          {[{ id:"all", label:"Tutti" }, ...categories.map(c => ({ id:c, label:categoryLabel(c) }))].map(cat => (
-            <button
-              key={cat.id}
-              onClick={() => { setSelCategory(cat.id); setSearch(""); }}
-              style={{
-                background:   selCategory === cat.id ? "#3b82f6" : "#1e293b",
-                color:        selCategory === cat.id ? "#fff" : "#94a3b8",
-                border:       `1px solid ${selCategory === cat.id ? "#3b82f6" : "#334155"}`,
-                borderRadius: 20,
-                padding:      "5px 14px",
-                fontSize:     13,
-                cursor:       "pointer",
-                whiteSpace:   "nowrap",
-                fontWeight:   selCategory === cat.id ? 600 : 400,
-              }}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </div>
-
-        {/* Article grid */}
-        <div style={{ flex:1, overflowY:"auto", padding:16, display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))", gap:10, alignContent:"start" }}>
-          {filtered.map(a => (
-            <button
-              key={a.id}
-              onClick={() => addArticle(a)}
-              style={{
-                background:   "#1e293b",
-                border:       "1px solid #334155",
-                borderRadius: 10,
-                padding:      "12px 10px",
-                cursor:       "pointer",
-                textAlign:    "center",
-                transition:   "background 0.1s",
-              }}
-              onMouseEnter={e => (e.currentTarget.style.background = "#263548")}
-              onMouseLeave={e => (e.currentTarget.style.background = "#1e293b")}
-            >
-              <div style={{ color:"#f1f5f9", fontSize:13, fontWeight:600, marginBottom:6, lineHeight:1.3 }}>{a.name}</div>
-              <div style={{ color:"#3b82f6", fontSize:14, fontWeight:700 }}>{eur(a.price)}</div>
-            </button>
-          ))}
-          {filtered.length === 0 && (
-            <p style={{ color:"#475569", gridColumn:"1/-1", textAlign:"center", marginTop:40 }}>Nessun articolo trovato</p>
-          )}
-        </div>
-      </div>
-
-      {/* ── Right: Invoice panel ── */}
-      <div style={{ width:320, display:"flex", flexDirection:"column", background:"#0f172a" }}>
-
-        {/* Table header */}
-        <div style={{ padding:"12px 16px", borderBottom:"1px solid #1e293b", background:"#1e293b" }}>
-          <div style={{ color:"#94a3b8", fontSize:12, marginBottom:2 }}>CONTO</div>
-          <div style={{ color:"#f1f5f9", fontSize:18, fontWeight:700 }}>{table.name}</div>
-        </div>
-
-        {/* Cart items */}
-        <div style={{ flex:1, overflowY:"auto", padding:12 }}>
-          {cart.length === 0 && (
-            <p style={{ color:"#475569", textAlign:"center", marginTop:40, fontSize:13 }}>
-              Seleziona articoli dal menu
-            </p>
-          )}
-          {cart.map(c => (
-            <div
-              key={c.article.id}
-              style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 0", borderBottom:"1px solid #1e293b" }}
-            >
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ color:"#f1f5f9", fontSize:13, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.article.name}</div>
-                <div style={{ color:"#475569", fontSize:12 }}>{eur(c.article.price)} × {c.qty}</div>
-              </div>
-              <div style={{ color:"#f1f5f9", fontSize:14, fontWeight:600, minWidth:54, textAlign:"right" }}>
-                {eur(c.article.price * c.qty)}
-              </div>
-              <div style={{ display:"flex", gap:4 }}>
-                <button onClick={() => changeQty(c.article.id, -1)}
-                  style={{ background:"#1e293b", border:"1px solid #334155", color:"#f87171", borderRadius:6, width:26, height:26, cursor:"pointer", fontSize:16, lineHeight:1 }}>−</button>
-                <button onClick={() => changeQty(c.article.id, 1)}
-                  style={{ background:"#1e293b", border:"1px solid #334155", color:"#4ade80", borderRadius:6, width:26, height:26, cursor:"pointer", fontSize:16, lineHeight:1 }}>+</button>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Totals */}
-        {cart.length > 0 && (
-          <div style={{ padding:"12px 16px", borderTop:"1px solid #1e293b", background:"#1e293b" }}>
-            <div style={{ display:"flex", justifyContent:"space-between", color:"#94a3b8", fontSize:13, marginBottom:4 }}>
-              <span>Imponibile</span><span>{eur(totals.subtotal)}</span>
-            </div>
-            {Object.entries(totals.vatBreakdown).map(([rate, amt]) => (
-              <div key={rate} style={{ display:"flex", justifyContent:"space-between", color:"#94a3b8", fontSize:12, marginBottom:2 }}>
-                <span>IVA {rate}%</span><span>{eur(amt)}</span>
-              </div>
-            ))}
-            <div style={{ display:"flex", justifyContent:"space-between", color:"#f1f5f9", fontSize:18, fontWeight:700, borderTop:"1px solid #334155", paddingTop:8, marginTop:6 }}>
-              <span>TOTALE</span><span>{eur(totals.total)}</span>
-            </div>
-          </div>
-        )}
-
-        {/* Payment method toggle */}
-        {cart.length > 0 && (
-          <div style={{ display:"flex", gap:8, padding:"10px 16px", borderTop:"1px solid #1e293b" }}>
-            {(["cash","card"] as const).map(m => (
-              <button key={m}
-                onClick={() => setPayMethod(m)}
-                style={{
-                  flex:1, padding:"8px 0", borderRadius:8, fontSize:13, fontWeight:600, cursor:"pointer",
-                  background:   payMethod === m ? "#3b82f6" : "#1e293b",
-                  color:        payMethod === m ? "#fff" : "#64748b",
-                  border:       `1px solid ${payMethod === m ? "#3b82f6" : "#334155"}`,
-                }}
-              >
-                {m === "cash" ? "💵 Contanti" : "💳 Carta"}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {payError && <p style={{ color:"#f87171", textAlign:"center", fontSize:12, margin:"0 16px 8px" }}>{payError}</p>}
-
-        {/* Action buttons */}
-        <div style={{ display:"flex", gap:10, padding:"12px 16px", borderTop:"1px solid #1e293b" }}>
-          <button
-            onClick={onBack}
-            style={{ flex:1, background:"#1e293b", border:"1px solid #334155", color:"#94a3b8", borderRadius:10, padding:"12px 0", fontSize:14, cursor:"pointer", fontWeight:500 }}
-          >
-            ← Tavoli
-          </button>
-          <button
-            onClick={handlePay}
-            disabled={paying || cart.length === 0}
-            style={{
-              flex:2, background: cart.length > 0 ? "#16a34a" : "#1e293b",
-              border:"none", color: cart.length > 0 ? "#fff" : "#475569",
-              borderRadius:10, padding:"12px 0", fontSize:15, cursor: cart.length > 0 ? "pointer" : "not-allowed",
-              fontWeight:700,
-            }}
-          >
-            {paying ? "Salvataggio…" : `💰 Paga ${cart.length > 0 ? eur(totals.total) : ""}`}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// ─── Main POS layout ──────────────────────────────────────────────────────────
 export default function POSPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
 
-  const [user,         setUser]         = useState<StaffUser | null>(null);
-  const [authChecked,  setAuthChecked]  = useState(false);
-  const [view,         setView]         = useState<"tables" | "pos">("tables");
-  const [tables,       setTables]       = useState<KioskTable[]>([]);
-  const [openInvoices, setOpenInvoices] = useState<OpenInvoice[]>([]);
-  const [articles,     setArticles]     = useState<Article[]>([]);
-  const [selectedTable,setSelectedTable]= useState<KioskTable | null>(null);
-  const [loading,      setLoading]      = useState(false);
+  const [user,          setUser]          = useState<StaffUser | null>(null);
+  const [authChecked,   setAuthChecked]   = useState(false);
+  const [tables,        setTables]        = useState<KioskTable[]>([]);
+  const [openInvoices,  setOpenInvoices]  = useState<OpenInv[]>([]);
+  const [articles,      setArticles]      = useState<Article[]>([]);
+  const [categories,    setCategories]    = useState<string[]>([]);
+  const [selCat,        setSelCat]        = useState<string>("all");
+  const [search,        setSearch]        = useState("");
+  const [selTable,      setSelTable]      = useState<KioskTable | null>(null);
+  const [cart,          setCart]          = useState<CartItem[]>([]);
+  const [payMethod,     setPayMethod]     = useState<"cash"|"card">("cash");
+  const [paying,        setPaying]        = useState(false);
+  const [payErr,        setPayErr]        = useState("");
+  const [loading,       setLoading]       = useState(true);
 
-  // Auth check on mount
+  // Auth
   useEffect(() => {
-    const stored = localStorage.getItem("shop_user");
-    if (stored) {
-      try { setUser(JSON.parse(stored)); } catch { /* ignore */ }
-    }
+    const s = localStorage.getItem("shop_user");
+    if (s) { try { setUser(JSON.parse(s)); } catch { /**/ } }
     setAuthChecked(true);
   }, []);
 
@@ -456,82 +109,286 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
 
   const loadArticles = useCallback(async () => {
     const res = await fetch(`/${slug}/api/pos/articles`);
-    if (res.ok) { const d = await res.json(); setArticles(d.articles ?? []); }
+    if (res.ok) {
+      const d = await res.json();
+      setArticles(d.articles ?? []);
+      setCategories(d.categories ?? []);
+    }
   }, [slug]);
 
-  // Load data once authenticated
   useEffect(() => {
     if (!user) return;
-    setLoading(true);
     Promise.all([loadTables(), loadArticles()]).finally(() => setLoading(false));
   }, [user, loadTables, loadArticles]);
 
-  function handleLogout() {
-    localStorage.removeItem("shop_user");
-    setUser(null);
+  // Derived
+  const invMap = useMemo(() => {
+    const m: Record<string, OpenInv> = {};
+    for (const inv of openInvoices) if (inv.table_id) m[inv.table_id] = inv;
+    return m;
+  }, [openInvoices]);
+
+  const filtered = useMemo(() => {
+    return articles.filter(a => {
+      const matchCat = selCat === "all" || a.category === selCat;
+      const matchQ   = !search || a.name.toLowerCase().includes(search.toLowerCase());
+      return matchCat && matchQ;
+    });
+  }, [articles, selCat, search]);
+
+  const totals = useMemo(() => calcTotals(cart), [cart]);
+
+  // Cart actions
+  function addArticle(a: Article) {
+    if (search) setSearch(""); // clear search after adding
+    setCart(prev => {
+      const idx = prev.findIndex(c => c.article.id === a.id);
+      if (idx >= 0) { const n = [...prev]; n[idx] = { ...n[idx], qty: n[idx].qty + 1 }; return n; }
+      return [...prev, { article: a, qty: 1 }];
+    });
+  }
+  function changeQty(id: string, delta: number) {
+    setCart(prev => prev.map(c => c.article.id === id ? { ...c, qty: c.qty + delta } : c).filter(c => c.qty > 0));
   }
 
-  function handleSelectTable(t: KioskTable) {
-    setSelectedTable(t);
-    setView("pos");
+  // Select table
+  function selectTable(t: KioskTable) {
+    setSelTable(t);
+    setCart([]);
+    setPayErr("");
+    setSelCat("all");
+    setSearch("");
   }
 
-  function handlePaid() {
-    setView("tables");
-    setSelectedTable(null);
-    loadTables();
-  }
-
-  function handleBack() {
-    setView("tables");
-    setSelectedTable(null);
-    loadTables();
+  // Pay
+  async function handlePay() {
+    if (!selTable || cart.length === 0) return;
+    setPaying(true); setPayErr("");
+    try {
+      const res = await fetch(`/${slug}/api/pos/invoices`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          table_id:       selTable.id,
+          employee_id:    user?.id,
+          items:          cart.map(c => ({
+            article_id:   c.article.id,
+            article_code: c.article.code,
+            article_name: c.article.name,
+            quantity:     c.qty,
+            unit_price:   c.article.price,
+            vat_rate:     c.article.vat_rate,
+            total_price:  +(c.article.price * c.qty).toFixed(2),
+          })),
+          subtotal:       +totals.subtotal.toFixed(2),
+          vat_amount:     +totals.vat_amount.toFixed(2),
+          total:          +totals.total.toFixed(2),
+          status:         "paid",
+          payment_method: payMethod,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setPayErr(data.error ?? "Errore"); return; }
+      // Success: clear table
+      setCart([]);
+      setSelTable(null);
+      await loadTables();
+    } catch { setPayErr("Errore di connessione"); }
+    finally { setPaying(false); }
   }
 
   if (!authChecked) return null;
   if (!user) return <LoginScreen onLogin={setUser} slug={slug} />;
 
-  return (
-    <div style={{ minHeight:"100vh", background:"#0f172a", color:"#f1f5f9", fontFamily:"system-ui,sans-serif" }}>
+  const H  = "56px";
+  const TB = "90px"; // table bar height
 
-      {/* Header */}
-      <header style={{ height:56, background:"#1e293b", borderBottom:"1px solid #0f172a", display:"flex", alignItems:"center", padding:"0 20px", gap:16 }}>
+  return (
+    <div style={{ height:"100vh", display:"flex", flexDirection:"column", background:"#0f172a", color:"#f1f5f9", fontFamily:"system-ui,sans-serif", overflow:"hidden" }}>
+
+      {/* ── Header ── */}
+      <header style={{ height:H, minHeight:H, background:"#1e293b", borderBottom:"1px solid #0f172a", display:"flex", alignItems:"center", padding:"0 16px", gap:12, flexShrink:0 }}>
         <span style={{ fontSize:20 }}>🍕</span>
-        <span style={{ fontWeight:700, fontSize:16, color:"#f1f5f9", flex:1 }}>
-          {view === "pos" && selectedTable ? `POS — ${selectedTable.name}` : "La Piazzetta · Cassa POS"}
+        <span style={{ fontWeight:700, fontSize:15, flex:1 }}>
+          La Piazzetta — Cassa POS
+          {selTable && <span style={{ color:"#22c55e", marginLeft:12 }}>› {selTable.name}</span>}
         </span>
         <span style={{ color:"#64748b", fontSize:13 }}>{user.name}</span>
-        <a href={`/${slug}/shop`} style={{ color:"#64748b", fontSize:13, textDecoration:"none" }}>Dashboard</a>
-        <button
-          onClick={handleLogout}
-          style={{ background:"none", border:"1px solid #334155", color:"#94a3b8", borderRadius:6, padding:"4px 10px", cursor:"pointer", fontSize:12 }}
-        >
+        <a href={`/${slug}/shop`} style={{ color:"#64748b", fontSize:12, textDecoration:"none", border:"1px solid #334155", borderRadius:6, padding:"4px 10px" }}>Dashboard</a>
+        <button onClick={() => { localStorage.removeItem("shop_user"); setUser(null); }}
+          style={{ background:"none", border:"1px solid #334155", color:"#94a3b8", borderRadius:6, padding:"4px 10px", cursor:"pointer", fontSize:12 }}>
           Esci
         </button>
       </header>
 
-      {/* Content */}
-      {loading ? (
-        <div style={{ display:"flex", justifyContent:"center", alignItems:"center", height:"calc(100vh - 56px)", color:"#64748b" }}>
-          Caricamento…
+      {/* ── Body (categories | articles | invoice) ── */}
+      <div style={{ flex:1, display:"flex", overflow:"hidden", minHeight:0 }}>
+
+        {/* ── Categories ── */}
+        <div style={{ width:160, background:"#1e293b", display:"flex", flexDirection:"column", borderRight:"1px solid #0f172a", overflow:"hidden" }}>
+          <div style={{ background:"#166534", padding:"8px 12px", fontSize:12, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#bbf7d0" }}>
+            Categorie
+          </div>
+          <div style={{ flex:1, overflowY:"auto" }}>
+            {[{ id:"all", label:"Tutti" }, ...categories.map(c => ({ id:c, label:catLabel(c) }))].map(cat => (
+              <button key={cat.id} onClick={() => { setSelCat(cat.id); setSearch(""); }}
+                style={{
+                  display:"block", width:"100%", textAlign:"left",
+                  padding:"10px 14px", background: selCat === cat.id ? "#166534" : "transparent",
+                  color: selCat === cat.id ? "#fff" : "#94a3b8",
+                  border:"none", borderBottom:"1px solid #0f172a",
+                  cursor:"pointer", fontSize:13, fontWeight: selCat === cat.id ? 600 : 400,
+                }}>
+                {cat.label}
+              </button>
+            ))}
+          </div>
         </div>
-      ) : view === "tables" ? (
-        <TableGrid
-          tables={tables}
-          openInvoices={openInvoices}
-          onSelect={handleSelectTable}
-          onRefresh={loadTables}
-        />
-      ) : selectedTable ? (
-        <POSView
-          table={selectedTable}
-          articles={articles}
-          onBack={handleBack}
-          onPaid={handlePaid}
-          slug={slug}
-          staffId={user.id}
-        />
-      ) : null}
+
+        {/* ── Articles ── */}
+        <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+          <div style={{ background:"#166534", padding:"8px 12px", fontSize:12, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#bbf7d0", display:"flex", alignItems:"center", gap:10 }}>
+            <span style={{ flex:1 }}>Prodotti</span>
+            <input
+              value={search}
+              onChange={e => { setSearch(e.target.value); setSelCat("all"); }}
+              placeholder="🔍  Cerca..."
+              style={{ background:"#14532d", border:"1px solid #15803d", borderRadius:6, padding:"4px 10px", color:"#f0fdf4", fontSize:12, width:160, outline:"none" }}
+            />
+          </div>
+
+          {loading ? (
+            <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:"#64748b" }}>Caricamento…</div>
+          ) : (
+            <div style={{ flex:1, overflowY:"auto", padding:10, display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))", gap:8, alignContent:"start" }}>
+              {filtered.map(a => (
+                <button key={a.id} onClick={() => addArticle(a)}
+                  style={{ background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:6, padding:"8px 6px", cursor:"pointer", textAlign:"center" }}
+                  onMouseEnter={e => { e.currentTarget.style.background="#dbeafe"; e.currentTarget.style.borderColor="#93c5fd"; }}
+                  onMouseLeave={e => { e.currentTarget.style.background="#f8fafc"; e.currentTarget.style.borderColor="#e2e8f0"; }}>
+                  <div style={{ color:"#0f172a", fontSize:11, fontWeight:600, lineHeight:1.3, marginBottom:4 }}>{a.name}</div>
+                  <div style={{ color:"#1d4ed8", fontSize:12, fontWeight:700 }}>{eur(a.price)}</div>
+                </button>
+              ))}
+              {filtered.length === 0 && !loading && (
+                <p style={{ color:"#64748b", gridColumn:"1/-1", textAlign:"center", marginTop:40, fontSize:13 }}>
+                  {articles.length === 0 ? "Nessun articolo nel database" : "Nessun risultato"}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* ── Invoice panel ── */}
+        <div style={{ width:300, display:"flex", flexDirection:"column", background:"#1e293b", borderLeft:"1px solid #0f172a" }}>
+          <div style={{ background:"#166534", padding:"8px 12px", fontSize:12, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#bbf7d0" }}>
+            {selTable ? `Conto — ${selTable.name}` : "Ordine"}
+          </div>
+
+          {/* Table header */}
+          {!selTable && (
+            <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:"#475569", fontSize:13, padding:20, textAlign:"center" }}>
+              Seleziona un tavolo dalla barra in basso
+            </div>
+          )}
+
+          {selTable && (
+            <>
+              {/* Cart items */}
+              <div style={{ flex:1, overflowY:"auto", padding:8 }}>
+                {cart.length === 0 && (
+                  <p style={{ color:"#475569", textAlign:"center", marginTop:30, fontSize:12 }}>Aggiungi prodotti dal menu</p>
+                )}
+                {cart.map(c => (
+                  <div key={c.article.id} style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 4px", borderBottom:"1px solid #0f172a" }}>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ color:"#f1f5f9", fontSize:12, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.article.name}</div>
+                      <div style={{ color:"#64748b", fontSize:11 }}>{eur(c.article.price)} × {c.qty}</div>
+                    </div>
+                    <div style={{ color:"#f1f5f9", fontSize:13, fontWeight:700, minWidth:52, textAlign:"right" }}>{eur(c.article.price * c.qty)}</div>
+                    <div style={{ display:"flex", gap:3 }}>
+                      <button onClick={() => changeQty(c.article.id, -1)} style={{ background:"#0f172a", border:"1px solid #334155", color:"#f87171", borderRadius:4, width:22, height:22, cursor:"pointer", fontSize:14, lineHeight:1, padding:0 }}>−</button>
+                      <button onClick={() => changeQty(c.article.id,  1)} style={{ background:"#0f172a", border:"1px solid #334155", color:"#4ade80", borderRadius:4, width:22, height:22, cursor:"pointer", fontSize:14, lineHeight:1, padding:0 }}>+</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Totals */}
+              {cart.length > 0 && (
+                <div style={{ padding:"10px 12px", borderTop:"1px solid #0f172a", background:"#0f172a" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", color:"#64748b", fontSize:12, marginBottom:3 }}>
+                    <span>Imponibile</span><span>{eur(totals.subtotal)}</span>
+                  </div>
+                  {Object.entries(totals.vatByRate).map(([r, v]) => (
+                    <div key={r} style={{ display:"flex", justifyContent:"space-between", color:"#64748b", fontSize:11, marginBottom:2 }}>
+                      <span>IVA {r}%</span><span>{eur(v)}</span>
+                    </div>
+                  ))}
+                  <div style={{ display:"flex", justifyContent:"space-between", color:"#f1f5f9", fontSize:18, fontWeight:700, borderTop:"1px solid #1e293b", paddingTop:6, marginTop:4 }}>
+                    <span>TOTALE</span><span>{eur(totals.total)}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Payment method */}
+              {cart.length > 0 && (
+                <div style={{ display:"flex", gap:6, padding:"8px 12px", borderTop:"1px solid #0f172a" }}>
+                  {(["cash","card"] as const).map(m => (
+                    <button key={m} onClick={() => setPayMethod(m)} style={{ flex:1, padding:"7px 0", borderRadius:6, fontSize:12, fontWeight:600, cursor:"pointer", background: payMethod===m ? "#1d4ed8" : "#0f172a", color: payMethod===m ? "#fff" : "#64748b", border:`1px solid ${payMethod===m ? "#1d4ed8" : "#334155"}` }}>
+                      {m === "cash" ? "💵 Contanti" : "💳 Carta"}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {payErr && <p style={{ color:"#f87171", fontSize:11, textAlign:"center", margin:"0 12px 6px" }}>{payErr}</p>}
+
+              {/* Actions */}
+              <div style={{ display:"flex", gap:8, padding:"10px 12px", borderTop:"1px solid #0f172a" }}>
+                <button onClick={() => { setSelTable(null); setCart([]); }}
+                  style={{ flex:1, background:"#0f172a", border:"1px solid #334155", color:"#94a3b8", borderRadius:8, padding:"10px 0", fontSize:13, cursor:"pointer" }}>
+                  ← Chiudi
+                </button>
+                <button onClick={handlePay} disabled={paying || cart.length === 0}
+                  style={{ flex:2, background: cart.length > 0 ? "#16a34a" : "#1e293b", border:"none", color: cart.length > 0 ? "#fff" : "#475569", borderRadius:8, padding:"10px 0", fontSize:14, fontWeight:700, cursor: cart.length > 0 ? "pointer" : "not-allowed" }}>
+                  {paying ? "Salvo…" : `💰 Paga${cart.length > 0 ? "  " + eur(totals.total) : ""}`}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* ── Table bar ── */}
+      <div style={{ height:TB, minHeight:TB, background:"#1e293b", borderTop:"2px solid #166534", flexShrink:0, display:"flex", alignItems:"center", padding:"0 12px", gap:8, overflowX:"auto" }}>
+        <span style={{ color:"#4ade80", fontSize:11, fontWeight:700, letterSpacing:1, textTransform:"uppercase", whiteSpace:"nowrap", marginRight:4 }}>Tavoli</span>
+        {tables.filter(t => t.active).map(t => {
+          const inv      = invMap[t.id];
+          const occupied = !!inv;
+          const isActive = selTable?.id === t.id;
+          // Try to show a number from the name, fallback to the name
+          const label    = t.name.replace(/[^0-9]/g, "") || t.name;
+          return (
+            <button key={t.id} onClick={() => selectTable(t)}
+              title={t.name + (occupied ? ` — ${eur(inv.total)}` : " — Libero")}
+              style={{
+                minWidth:52, height:64, borderRadius:8, border:`2px solid ${isActive ? "#fff" : occupied ? "#f59e0b" : "#334155"}`,
+                background: isActive ? "#1d4ed8" : occupied ? "#92400e" : "#0f172a",
+                color: "#fff", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2, flexShrink:0,
+              }}>
+              <span style={{ fontSize:18, fontWeight:700, lineHeight:1 }}>{label}</span>
+              {occupied
+                ? <span style={{ fontSize:9, color:"#fcd34d", fontWeight:600 }}>{eur(inv.total)}</span>
+                : <span style={{ fontSize:9, color:"#475569" }}>libero</span>
+              }
+            </button>
+          );
+        })}
+        {tables.filter(t => t.active).length === 0 && (
+          <span style={{ color:"#475569", fontSize:12 }}>Nessun tavolo — aggiungili dal pannello Staff</span>
+        )}
+      </div>
     </div>
   );
 }
