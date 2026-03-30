@@ -38,10 +38,11 @@ function calcTotals(cart: CartItem[]) {
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Article  = { id: string; code: string; name: string; price: number; category: string; vat_rate: number; };
+type Article  = { id: string; code: string; name: string; price: number; category: string; vat_rate: number; section: string; };
 type CartItem = { article: Article; qty: number; };
 type InvItem  = { id: string; article_name: string; quantity: number; unit_price: number; vat_rate: number; total_price: number; };
 type OpenInv  = { id: string; table_id: string | null; total: number; invoice_items?: InvItem[]; };
+type Section  = { name: string; emoji: string; categories: string[] };
 type PosTab   = "cassa" | "orders" | "menu" | "tables" | "settings" | "shifts" | "shift";
 
 // ─── Login ────────────────────────────────────────────────────────────────────
@@ -181,6 +182,9 @@ function SettingsTab({ slug }: { slug: string }) {
   const [onlineOrders, setOnlineOrders] = useState(true);
   const [hours, setHours]               = useState<WeekHours | null>(null);
   const [deliveryFee, setDeliveryFee]   = useState("0");
+  const [sections, setSections]         = useState<{ name: string; emoji: string }[]>([]);
+  const [newSecName, setNewSecName]     = useState("");
+  const [newSecEmoji, setNewSecEmoji]   = useState("🏠");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved]   = useState(false);
   useEffect(() => {
@@ -188,6 +192,7 @@ function SettingsTab({ slug }: { slug: string }) {
       setOnlineOrders(data.online_orders ?? true);
       setHours(data.hours ?? null);
       setDeliveryFee(data.delivery_fee != null ? String(data.delivery_fee) : "0");
+      setSections(data.sections ?? [{ name:"Bar", emoji:"🍹" }, { name:"Pizzeria", emoji:"🍕" }]);
     });
   }, [slug]);
   const saveSetting = async (key: string, value: unknown) => {
@@ -265,6 +270,31 @@ function SettingsTab({ slug }: { slug: string }) {
           </div>
         )}
       </div>
+      {/* ── Sections management ── */}
+      <div className="settings-card">
+        <div className="settings-card__head">
+          <div><h3 className="settings-card__title">Sezioni del locale</h3><p className="settings-card__sub">Bar, Pizzeria, Ristorante, Fast Food… definisci le tue aree</p></div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            {saved && <span className="saved-badge">✓ Salvato</span>}
+            {saving && <span className="saving-badge">Salvataggio…</span>}
+          </div>
+        </div>
+        <div style={{padding:"12px 20px 16px",display:"flex",flexDirection:"column",gap:10}}>
+          {sections.map((s,i) => (
+            <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:"#F5EADA",borderRadius:8,border:"1px solid #EDE0CC"}}>
+              <input value={s.emoji} onChange={e=>{const u=[...sections];u[i]={...u[i],emoji:e.target.value};setSections(u);}} style={{width:44,padding:"6px",border:"1.5px solid #EDE0CC",borderRadius:6,fontSize:"1.1rem",textAlign:"center",fontFamily:"inherit"}}/>
+              <input value={s.name} onChange={e=>{const u=[...sections];u[i]={...u[i],name:e.target.value};setSections(u);}} style={{flex:1,padding:"7px 10px",border:"1.5px solid #EDE0CC",borderRadius:6,fontSize:".88rem",fontFamily:"inherit"}}/>
+              <button onClick={()=>{const u=sections.filter((_,j)=>j!==i);setSections(u);saveSetting("sections",u);}} style={{padding:"6px 10px",background:"transparent",border:"1px solid #FFCDD2",borderRadius:6,fontSize:".75rem",cursor:"pointer",color:"#B71C1C"}}>✕</button>
+            </div>
+          ))}
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <input value={newSecEmoji} onChange={e=>setNewSecEmoji(e.target.value)} placeholder="🏠" style={{width:44,padding:"7px",border:"1.5px solid #EDE0CC",borderRadius:6,fontSize:"1.1rem",textAlign:"center",fontFamily:"inherit"}}/>
+            <input value={newSecName} onChange={e=>setNewSecName(e.target.value)} placeholder="Nome sezione (es. Ristorante)" style={{flex:1,minWidth:160,padding:"8px 12px",border:"1.5px solid #EDE0CC",borderRadius:6,fontSize:".88rem",fontFamily:"inherit"}} onKeyDown={e=>{if(e.key==="Enter"&&newSecName.trim()){const u=[...sections,{name:newSecName.trim(),emoji:newSecEmoji}];setSections(u);saveSetting("sections",u);setNewSecName("");setNewSecEmoji("🏠");}}}/>
+            <button className="btn-save-hours" onClick={()=>{if(!newSecName.trim())return;const u=[...sections,{name:newSecName.trim(),emoji:newSecEmoji}];setSections(u);saveSetting("sections",u);setNewSecName("");setNewSecEmoji("🏠");}}>+ Aggiungi</button>
+          </div>
+          <button className="btn-save-hours" style={{alignSelf:"flex-start"}} onClick={()=>saveSetting("sections",sections)}>💾 Salva sezioni</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -279,6 +309,15 @@ function MenuTab({ slug }: { slug: string }) {
   const [showNewCat, setShowNewCat] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [newCatEmoji, setNewCatEmoji] = useState("🍕");
+  const [newCatSection, setNewCatSection] = useState("");
+  const [menuSections, setMenuSections] = useState<{ name: string; emoji: string }[]>([]);
+  useEffect(() => {
+    fetch(`/${slug}/api/settings`).then(r=>r.json()).then(d => {
+      const secs = d.sections ?? [{ name:"Bar", emoji:"🍹" }, { name:"Pizzeria", emoji:"🍕" }];
+      setMenuSections(secs);
+      setNewCatSection(secs.find((s: { name: string }) => s.name !== "Bar")?.name ?? secs[0]?.name ?? "");
+    }).catch(()=>{});
+  }, [slug]);
   const [uploadingItemImg, setUploadingItemImg] = useState(false);
   const uploadItemImage = async (file: File) => {
     setUploadingItemImg(true);
@@ -312,7 +351,7 @@ function MenuTab({ slug }: { slug: string }) {
   };
   const addCategory = () => {
     if (!newCatName.trim()) return;
-    const newCat: MenuCategory = { category:newCatName.trim(), emoji:newCatEmoji, sort_order:menu.length, items:[] };
+    const newCat: MenuCategory = { category:newCatName.trim(), emoji:newCatEmoji, sort_order:menu.length, items:[], main_category: newCatSection || undefined };
     const u = [...menu, newCat]; setMenu(u);
     fetch(`/${slug}/api/menu`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify([newCat]) })
       .then(() => fetch(`/${slug}/api/menu`).then((r)=>r.json()).then(setMenu));
@@ -332,11 +371,27 @@ function MenuTab({ slug }: { slug: string }) {
         <div className="new-cat-form">
           <input value={newCatEmoji} onChange={(e)=>setNewCatEmoji(e.target.value)} className="emoji-input"/>
           <input value={newCatName} onChange={(e)=>setNewCatName(e.target.value)} placeholder="Nome categoria" className="cat-name-input" onKeyDown={(e)=>e.key==="Enter"&&addCategory()}/>
+          <select value={newCatSection} onChange={(e)=>setNewCatSection(e.target.value)} style={{padding:"8px 10px",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".85rem",fontFamily:"inherit",outline:"none",minWidth:120}}>
+            {menuSections.map(s=><option key={s.name} value={s.name}>{s.emoji} {s.name}</option>)}
+          </select>
           <button className="btn-confirm" onClick={addCategory}>Aggiungi</button>
           <button className="btn-cancel" onClick={()=>setShowNewCat(false)}>Annulla</button>
         </div>
       )}
-      {menu.map((cat,ci) => (
+      {/* Group categories by section */}
+      {menuSections.map(sec => {
+        const cats = menu.filter(c => (c.main_category ?? menuSections.find(s=>s.name!=="Bar")?.name) === sec.name);
+        if (cats.length === 0) return null;
+        return (
+          <div key={sec.name}>
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"10px 14px",background:"#F5EADA",borderRadius:10,margin:"8px 0 4px",border:"1px solid #EDE0CC"}}>
+              <span style={{fontSize:"1.1rem"}}>{sec.emoji}</span>
+              <span style={{fontFamily:"Georgia,serif",fontSize:".95rem",fontWeight:700,color:"#1C1C1A"}}>{sec.name}</span>
+              <span style={{fontSize:".75rem",color:"#7A7770",marginLeft:"auto"}}>{cats.reduce((s,c)=>s+c.items.length,0)} prodotti</span>
+            </div>
+      {cats.map((cat) => {
+        const ci = menu.indexOf(cat);
+        return (
         <div key={cat.id??cat.category} className="menu-section">
           <div className="menu-section__head">
             <h3 className="menu-section__title">{cat.emoji} {cat.category}</h3>
@@ -369,7 +424,11 @@ function MenuTab({ slug }: { slug: string }) {
             {cat.items.length===0 && <p className="empty-cat">Nessun prodotto.</p>}
           </div>
         </div>
-      ))}
+        );
+      })}
+          </div>
+        );
+      })}
       {editingItem!==null && (
         <>
           <div className="modal-backdrop" onClick={()=>setEditingItem(null)}/>
@@ -777,6 +836,8 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
   const [openInvoices, setOpenInvoices] = useState<OpenInv[]>([]);
   const [articles,     setArticles]     = useState<Article[]>([]);
   const [categories,   setCategories]   = useState<string[]>([]);
+  const [sections,     setSections]     = useState<Section[]>([]);
+  const [selSection,   setSelSection]   = useState<string | null>(null);
   const [selCat,       setSelCat]       = useState<string>("all");
   const [search,       setSearch]       = useState("");
   const [selTable,     setSelTable]     = useState<KioskTable | null>(null);
@@ -817,6 +878,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
       if (!res.ok) { setArticleError(d.error??"Errore caricamento articoli"); return; }
       setArticles(d.articles??[]);
       setCategories(d.categories??[]);
+      setSections(d.sections??[]);
       setArticleError((d.debug?.barpro_count??0)===0&&(d.debug?.menu_count??0)===0 ? `Nessun articolo. Debug: ${JSON.stringify(d.debug)}` : null);
     } catch (e) { setArticleError(`Errore: ${String(e)}`); }
   }, [slug]);
@@ -827,7 +889,23 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
   }, [user, loadTables, loadArticles]);
 
   const invMap = useMemo(() => { const m: Record<string,OpenInv>={}; for (const inv of openInvoices) if (inv.table_id) m[inv.table_id]=inv; return m; }, [openInvoices]);
-  const filtered = useMemo(() => articles.filter(a => (selCat==="all"||a.category===selCat) && (!search||a.name.toLowerCase().includes(search.toLowerCase()))), [articles, selCat, search]);
+
+  const sectionCats = useMemo(() => {
+    if (!selSection) return null;
+    return sections.find(s => s.name === selSection)?.categories ?? null;
+  }, [sections, selSection]);
+
+  const visibleCats = useMemo(() => {
+    if (!sectionCats) return categories;
+    return categories.filter(c => sectionCats.includes(c));
+  }, [categories, sectionCats]);
+
+  const filtered = useMemo(() => articles.filter(a =>
+    (sectionCats === null || sectionCats.includes(a.category)) &&
+    (selCat === "all" || a.category === selCat) &&
+    (!search || a.name.toLowerCase().includes(search.toLowerCase()))
+  ), [articles, selCat, search, sectionCats]);
+
   const totals = useMemo(() => calcTotals(cart), [cart]);
 
   function addArticle(a: Article) {
@@ -961,14 +1039,34 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
         <div style={{ flex:1, display:"flex", overflow:"hidden", minHeight:0, flexDirection:"column" }}>
           {/* Main body */}
           <div style={{ flex:1, display:"flex", overflow:"hidden", minHeight:0 }}>
-            {/* Categories */}
-            <div style={{ width:160, background:"#1e293b", display:"flex", flexDirection:"column", borderRight:"1px solid #0f172a", overflow:"hidden" }}>
-              <div style={{ background:"#166534", padding:"8px 12px", fontSize:12, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#bbf7d0" }}>Categorie</div>
+            {/* Categories — two-level */}
+            <div style={{ width:168, background:"#1e293b", display:"flex", flexDirection:"column", borderRight:"1px solid #0f172a", overflow:"hidden" }}>
+              {/* Section buttons */}
+              <div style={{ background:"#0f172a", padding:"6px 8px", display:"flex", flexDirection:"column", gap:3, flexShrink:0, borderBottom:"2px solid #0f172a" }}>
+                <button onClick={()=>{ setSelSection(null); setSelCat("all"); setSearch(""); }}
+                  style={{ display:"block", width:"100%", textAlign:"left", padding:"7px 10px", background:selSection===null?"#1d4ed8":"transparent", color:selSection===null?"#fff":"#64748b", border:`1px solid ${selSection===null?"#1d4ed8":"#1e293b"}`, borderRadius:6, cursor:"pointer", fontSize:12, fontWeight:selSection===null?700:400 }}>
+                  🏠 Tutto
+                </button>
+                {sections.map(s => (
+                  <button key={s.name} onClick={()=>{ setSelSection(s.name); setSelCat("all"); setSearch(""); }}
+                    style={{ display:"block", width:"100%", textAlign:"left", padding:"7px 10px", background:selSection===s.name?"#1d4ed8":"transparent", color:selSection===s.name?"#fff":"#94a3b8", border:`1px solid ${selSection===s.name?"#1d4ed8":"#1e293b"}`, borderRadius:6, cursor:"pointer", fontSize:12, fontWeight:selSection===s.name?700:400 }}>
+                    {s.emoji} {s.name}
+                  </button>
+                ))}
+              </div>
+              {/* Sub-categories */}
+              <div style={{ background:"#166534", padding:"5px 10px", fontSize:10, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#bbf7d0", flexShrink:0 }}>
+                {selSection ?? "Categorie"}
+              </div>
               <div style={{ flex:1, overflowY:"auto" }}>
-                {[{ id:"all", label:"Tutti" }, ...categories.map(c=>({ id:c, label:catLabel(c) }))].map(cat => (
-                  <button key={cat.id} onClick={()=>{ setSelCat(cat.id); setSearch(""); }}
-                    style={{ display:"block", width:"100%", textAlign:"left", padding:"10px 14px", background:selCat===cat.id?"#166534":"transparent", color:selCat===cat.id?"#fff":"#94a3b8", border:"none", borderBottom:"1px solid #0f172a", cursor:"pointer", fontSize:13, fontWeight:selCat===cat.id?600:400 }}>
-                    {cat.label}
+                <button onClick={()=>{ setSelCat("all"); setSearch(""); }}
+                  style={{ display:"block", width:"100%", textAlign:"left", padding:"9px 12px", background:selCat==="all"?"#166534":"transparent", color:selCat==="all"?"#fff":"#94a3b8", border:"none", borderBottom:"1px solid #0f172a", cursor:"pointer", fontSize:12, fontWeight:selCat==="all"?600:400 }}>
+                  Tutti
+                </button>
+                {visibleCats.map(c => (
+                  <button key={c} onClick={()=>{ setSelCat(c); setSearch(""); }}
+                    style={{ display:"block", width:"100%", textAlign:"left", padding:"9px 12px", background:selCat===c?"#166534":"transparent", color:selCat===c?"#fff":"#94a3b8", border:"none", borderBottom:"1px solid #0f172a", cursor:"pointer", fontSize:12, fontWeight:selCat===c?600:400 }}>
+                    {catLabel(c)}
                   </button>
                 ))}
               </div>

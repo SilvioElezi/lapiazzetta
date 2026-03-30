@@ -74,6 +74,7 @@ export type MenuCategory = {
   emoji: string;
   sort_order: number;
   items: MenuItem[];
+  main_category?: string;
 };
 
 export type StaffRole = "reception" | "delivery" | "admin";

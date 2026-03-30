@@ -16,13 +16,26 @@ export async function GET(
     .single();
 
   if (bizErr || !business) {
-    return NextResponse.json({ error: `Business not found: ${bizErr?.message}`, articles: [], categories: [] }, { status: 404 });
+    return NextResponse.json({ error: `Business not found: ${bizErr?.message}`, articles: [], categories: [], sections: [] }, { status: 404 });
   }
 
   const bid = business.id;
 
-  // ── BarPRO articles (no active filter — get all) ──────────────────────────
-  let barpro: { id: string; code: string; name: string; price: number; category: string; vat_rate: number; source: string }[] = [];
+  // ── Fetch sections config from settings ───────────────────────────────────
+  const { data: sectionRow } = await supabaseAdmin
+    .from("settings")
+    .select("value")
+    .eq("business_id", bid)
+    .eq("key", "sections")
+    .single();
+
+  const sectionsConfig: { name: string; emoji: string }[] = (sectionRow?.value as { name: string; emoji: string }[]) ?? [
+    { name: "Bar",      emoji: "🍹" },
+    { name: "Pizzeria", emoji: "🍕" },
+  ];
+
+  // ── BarPRO articles ───────────────────────────────────────────────────────
+  let barpro: { id: string; code: string; name: string; price: number; category: string; vat_rate: number; source: string; section: string }[] = [];
   let artErr: string | null = null;
   let vatErr: string | null = null;
 
@@ -49,6 +62,7 @@ export async function GET(
     barpro = (rawArticles || [])
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .filter((a: any) => a.active !== false)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .map((a: any) => ({
         id:       String(a.id),
         code:     String(a.code),
@@ -57,6 +71,7 @@ export async function GET(
         category: `bp_${a.category ?? "0"}`,
         vat_rate: vatMap[Number(a.vat_rate_id)] ?? 10,
         source:   "barpro",
+        section:  "Bar",
       }));
   } catch (e) {
     artErr = String(e);
@@ -65,17 +80,22 @@ export async function GET(
   // ── Menu items (pizza / food) ─────────────────────────────────────────────
   let menuItems: typeof barpro = [];
   let menuErr: string | null = null;
+  // Maps category key (e.g. "menu_Pizza") → main_category name (e.g. "Pizzeria")
+  const menuCatSection: Record<string, string> = {};
 
   try {
     const { data: menuCats, error: mErr } = await supabaseAdmin
       .from("menu")
-      .select("category, items")
+      .select("category, items, main_category")
       .eq("business_id", bid)
       .order("sort_order", { ascending: true });
 
     menuErr = mErr?.message ?? null;
 
     for (const cat of menuCats || []) {
+      const section = (cat.main_category as string | null) ?? sectionsConfig.find(s => s.name !== "Bar")?.name ?? "Pizzeria";
+      menuCatSection[`menu_${cat.category}`] = section;
+
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       for (const item of (cat.items as any[]) || []) {
         if (item.active === false) continue;
@@ -87,6 +107,7 @@ export async function GET(
           category: `menu_${cat.category}`,
           vat_rate: 10,
           source:   "menu",
+          section,
         });
       }
     }
@@ -104,9 +125,31 @@ export async function GET(
     return x.localeCompare(y);
   });
 
+  // Build sections with their categories list
+  const sectionCatMap: Record<string, string[]> = {};
+  for (const s of sectionsConfig) sectionCatMap[s.name] = [];
+
+  // Bar section = all bp_ categories
+  for (const cat of categories.filter(c => c.startsWith("bp_"))) {
+    if (!sectionCatMap["Bar"]) sectionCatMap["Bar"] = [];
+    sectionCatMap["Bar"].push(cat);
+  }
+  // Other sections = menu_ categories by their main_category
+  for (const [catKey, sectionName] of Object.entries(menuCatSection)) {
+    if (!sectionCatMap[sectionName]) sectionCatMap[sectionName] = [];
+    if (categories.includes(catKey)) sectionCatMap[sectionName].push(catKey);
+  }
+
+  const sections = sectionsConfig.map(s => ({
+    name:       s.name,
+    emoji:      s.emoji,
+    categories: sectionCatMap[s.name] ?? [],
+  }));
+
   return NextResponse.json({
     articles,
     categories,
+    sections,
     debug: {
       business_id:   bid,
       barpro_count:  barpro.length,

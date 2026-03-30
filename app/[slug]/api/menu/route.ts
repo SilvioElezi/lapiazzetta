@@ -45,13 +45,13 @@ export async function POST(
     if (cat.id) {
       await supabaseAdmin
         .from("menu")
-        .update({ category: cat.category, emoji: cat.emoji, sort_order: cat.sort_order, items: cat.items })
+        .update({ category: cat.category, emoji: cat.emoji, sort_order: cat.sort_order, items: cat.items, main_category: cat.main_category ?? null })
         .eq("id", cat.id)
         .eq("business_id", business.id);
     } else {
       await supabaseAdmin
         .from("menu")
-        .insert({ business_id: business.id, category: cat.category, emoji: cat.emoji, sort_order: cat.sort_order ?? 0, items: cat.items });
+        .insert({ business_id: business.id, category: cat.category, emoji: cat.emoji, sort_order: cat.sort_order ?? 0, items: cat.items, main_category: cat.main_category ?? null });
     }
   }
 
