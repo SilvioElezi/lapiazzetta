@@ -96,14 +96,18 @@ function LoginScreen({ onLogin, slug }: { onLogin: (u: StaffUser) => void; slug:
       @media(max-width:640px){
         .login-wrap{flex-direction:column}
         .login-staff{width:100%;border-right:none;border-bottom:1px solid #2A2A28}
-        .login-staff-header{padding:20px 20px 16px;display:flex;align-items:center;gap:12px;text-align:left;border-bottom:none}
-        .login-staff-header-logo{font-size:28px;line-height:1}
-        .login-staff-list{flex-direction:row;overflow-x:auto;overflow-y:hidden;padding:10px 12px 14px;gap:8px;flex:none}
-        .login-staff-btn{flex-direction:column;align-items:center;gap:6px;padding:12px 16px;min-width:80px;text-align:center}
-        .login-numpad-panel{flex:1;padding:16px 20px 24px;gap:14px;justify-content:flex-start}
-        .login-pin-display{width:100%;max-width:320px;height:48px}
+        .login-staff-header{padding:16px 16px 12px;display:flex;align-items:center;gap:10px;text-align:left;border-bottom:none}
+        .login-staff-header-logo{font-size:24px;line-height:1}
+        .login-staff-list{flex-direction:row;overflow-x:auto;overflow-y:hidden;padding:8px 12px 12px;gap:8px;flex:none;scrollbar-width:none}
+        .login-staff-list::-webkit-scrollbar{display:none}
+        .login-staff-btn{flex-direction:column;align-items:center;gap:4px;padding:10px 8px;width:76px;min-width:76px;max-width:76px;text-align:center}
+        .login-staff-btn span{font-size:1.2rem!important}
+        .login-staff-btn p:first-child{font-size:.7rem!important;width:60px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center}
+        .login-staff-btn p:last-child{display:none}
+        .login-numpad-panel{flex:1;padding:14px 16px 20px;gap:12px;justify-content:flex-start}
+        .login-pin-display{width:100%;max-width:320px;height:46px}
         .login-numpad-grid{grid-template-columns:repeat(3,1fr);width:100%;max-width:320px;gap:8px}
-        .login-numpad-btn{height:64px;font-size:1.5rem!important}
+        .login-numpad-btn{height:62px;font-size:1.4rem!important}
       }
     `}</style>
     <div className="login-wrap">
@@ -1201,6 +1205,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
   const [user,         setUser]         = useState<StaffUser | null>(null);
   const [authChecked,  setAuthChecked]  = useState(false);
   const [tab,          setTab]          = useState<PosTab>("cassa");
+  const [cassaMobile,  setCassaMobile]  = useState<"menu"|"conto">("menu");
   const [activeShift,  setActiveShift]  = useState<DeliveryShift | null>(null);
 
   // Cassa state
@@ -1365,7 +1370,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
         const data = await res.json();
         if (!res.ok) { setPayErr(data.error ?? "Errore"); return; }
       }
-      setCart([]); setSelTable(null); setOpenInvId(null); setPayModal(false);
+      setCart([]); setSelTable(null); setOpenInvId(null); setPayModal(false); setCassaMobile("menu");
       await loadTables();
     } catch { setPayErr("Errore di connessione"); } finally { setPaying(false); }
   }
@@ -1385,7 +1390,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
       <header style={{ flexShrink:0, background:"#1C1C1A", borderBottom:"2px solid #166534", display:"flex", alignItems:"center", padding:"0 16px", gap:8, flexWrap:"wrap", minHeight:52, zIndex:10 }}>
         <span style={{ fontFamily:"Georgia,serif", fontSize:"1rem", fontWeight:700, color:"#FDF6EC", whiteSpace:"nowrap" }}>🍕 La Piazzetta</span>
         <span style={{ fontSize:".7rem", fontWeight:500, padding:"3px 9px", borderRadius:999, background:"rgba(253,246,236,.12)", color:"rgba(253,246,236,.7)", whiteSpace:"nowrap" }}>{roleBadge[user.role]}</span>
-        <nav style={{ display:"flex", gap:4, flexWrap:"wrap", flex:1 }}>
+        <nav className="pos-nav" style={{ display:"flex", gap:4, flexWrap:"wrap", flex:1 }}>
           {(user.role==="admin"||user.role==="reception") && (
             <button onClick={()=>setTab("cassa")} style={{ padding:"6px 12px", background:tab==="cassa"?"rgba(22,163,74,.9)":"rgba(253,246,236,.08)", border:"none", color:tab==="cassa"?"#fff":"rgba(253,246,236,.7)", borderRadius:8, cursor:"pointer", fontSize:".8rem", fontWeight:tab==="cassa"?700:500 }}>
               💰 Cassa{articles.length>0?` (${articles.length})`:""}
@@ -1408,11 +1413,11 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
 
       {/* ── CASSA TAB (full-height POS) ── */}
       {isCassa && (
-        <div style={{ flex:1, display:"flex", overflow:"hidden", minHeight:0, flexDirection:"column" }}>
+        <div className="pos-cassa-outer" style={{ flex:1, display:"flex", overflow:"hidden", minHeight:0, flexDirection:"column" }}>
           {/* Main body */}
-          <div style={{ flex:1, display:"flex", overflow:"hidden", minHeight:0 }}>
+          <div className="pos-cassa-body" style={{ flex:1, display:"flex", overflow:"hidden", minHeight:0 }}>
             {/* Categories — two-level */}
-            <div style={{ width:168, background:"#1e293b", display:"flex", flexDirection:"column", borderRight:"1px solid #0f172a", overflow:"hidden" }}>
+            <div className="pos-sidebar" style={{ width:168, background:"#1e293b", display:"flex", flexDirection:"column", borderRight:"1px solid #0f172a", overflow:"hidden" }}>
               {/* Section buttons */}
               <div style={{ background:"#0f172a", padding:"6px 8px", display:"flex", flexDirection:"column", gap:3, flexShrink:0, borderBottom:"2px solid #0f172a" }}>
                 <button onClick={()=>{ setSelSection(null); setSelCat("all"); setSearch(""); }}
@@ -1445,7 +1450,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
             </div>
 
             {/* Articles */}
-            <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+            <div className={`pos-art${cassaMobile==="conto" ? " pos-art--hidden" : ""}`} style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
               <div style={{ background:"#166534", padding:"8px 12px", fontSize:12, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#bbf7d0", display:"flex", alignItems:"center", gap:10 }}>
                 <span style={{ flex:1 }}>Prodotti</span>
                 <input value={search} onChange={e=>{ setSearch(e.target.value); setSelCat("all"); }} placeholder="🔍  Cerca…"
@@ -1475,7 +1480,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
             </div>
 
             {/* Invoice panel */}
-            <div style={{ width:300, display:"flex", flexDirection:"column", background:"#1e293b", borderLeft:"1px solid #0f172a" }}>
+            <div className={`pos-invoice${cassaMobile==="menu" ? " pos-invoice--hidden" : ""}`} style={{ width:300, display:"flex", flexDirection:"column", background:"#1e293b", borderLeft:"1px solid #0f172a" }}>
               <div style={{ background:"#166534", padding:"8px 12px", fontSize:12, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#bbf7d0" }}>
                 {selTable?`Conto — ${selTable.name}`:"Ordine"}
               </div>
@@ -1507,7 +1512,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
                 {payErr && <p style={{ color:"#f87171", fontSize:11, textAlign:"center", margin:"0 12px 6px" }}>{payErr}</p>}
                 <div style={{ display:"flex", flexDirection:"column", gap:6, padding:"10px 12px", borderTop:"1px solid #0f172a" }}>
                   <div style={{ display:"flex", gap:6 }}>
-                    <button onClick={()=>{ setSelTable(null); setOpenInvId(null); setCart([]); }} style={{ flex:1, background:"#0f172a", border:"1px solid #334155", color:"#94a3b8", borderRadius:8, padding:"10px 0", fontSize:12, cursor:"pointer" }}>← Deseleziona</button>
+                    <button onClick={()=>{ setSelTable(null); setOpenInvId(null); setCart([]); setCassaMobile("menu"); }} style={{ flex:1, background:"#0f172a", border:"1px solid #334155", color:"#94a3b8", borderRadius:8, padding:"10px 0", fontSize:12, cursor:"pointer" }}>← Deseleziona</button>
                     {cart.length>0 && (
                       <button onClick={sendToTable} disabled={sending} style={{ flex:2, background:"#92400e", border:"none", color:"#fcd34d", borderRadius:8, padding:"10px 0", fontSize:13, fontWeight:700, cursor:"pointer" }}>
                         {sending?"Invio…":"📤 Invia al tavolo"}
@@ -1529,8 +1534,16 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
             </div>
           </div>
 
+          {/* Mobile view switcher — only visible on small screens */}
+          <div className="pos-mobile-switch">
+            <button className={`pos-mobile-tab${cassaMobile==="menu"?" pos-mobile-tab--active":""}`} onClick={()=>setCassaMobile("menu")}>🍕 Menu</button>
+            <button className={`pos-mobile-tab${cassaMobile==="conto"?" pos-mobile-tab--active":""}`} onClick={()=>setCassaMobile("conto")}>
+              🧾 Conto{cart.length>0?` (${cart.reduce((s,c)=>s+c.qty,0)})`:""}
+            </button>
+          </div>
+
           {/* Table bar */}
-          <div style={{ height:90, minHeight:90, background:"#1e293b", borderTop:"2px solid #166534", flexShrink:0, display:"flex", alignItems:"center", padding:"0 12px", gap:8, overflowX:"auto" }}>
+          <div className="pos-tablebar" style={{ height:90, minHeight:90, background:"#1e293b", borderTop:"2px solid #166534", flexShrink:0, display:"flex", alignItems:"center", padding:"0 12px", gap:8, overflowX:"auto" }}>
             <span style={{ color:"#4ade80", fontSize:11, fontWeight:700, letterSpacing:1, textTransform:"uppercase", whiteSpace:"nowrap", marginRight:4 }}>Tavoli</span>
             {tables.filter(t=>t.active).map(t => {
               const inv = invMap[t.id]; const occupied = !!inv; const isActive = selTable?.id===t.id;
@@ -1725,4 +1738,30 @@ const shopStyles = `
 .handover-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;background:#FEF3DB;border:1.5px solid #F9DC7D;border-radius:12px;flex-wrap:wrap}
 .handover-banner__title{font-size:.9rem;font-weight:600;color:#8A5E12;margin-bottom:3px}
 .handover-banner__sub{font-size:.8rem;color:#8A5E12}
+/* ── Responsive: POS on smartphones ── */
+@media(max-width:768px){
+  .pos-nav{flex-wrap:nowrap!important;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-ms-overflow-style:none;gap:2px!important}
+  .pos-nav::-webkit-scrollbar{display:none}
+  .pos-nav button{font-size:.72rem!important;padding:5px 8px!important;white-space:nowrap;flex-shrink:0}
+  .pos-cassa-body{flex-direction:column!important}
+  .pos-sidebar{width:100%!important;flex-direction:row!important;height:40px;min-height:40px;overflow:hidden;border-right:none!important;border-bottom:2px solid #0f172a;flex-shrink:0}
+  .pos-sidebar>div:first-child{flex-direction:row!important;padding:4px 4px!important;gap:2px!important;border-bottom:none!important;flex-shrink:0;overflow-x:auto;border-right:2px solid #0f172a;scrollbar-width:none}
+  .pos-sidebar>div:first-child::-webkit-scrollbar{display:none}
+  .pos-sidebar>div:first-child button{width:auto!important;white-space:nowrap;padding:4px 8px!important;font-size:11px!important}
+  .pos-sidebar>div:nth-child(2){display:none!important}
+  .pos-sidebar>div:last-child{flex-direction:row!important;overflow-x:auto!important;overflow-y:hidden!important;flex:1;scrollbar-width:none}
+  .pos-sidebar>div:last-child::-webkit-scrollbar{display:none}
+  .pos-sidebar>div:last-child button{white-space:nowrap!important;border-bottom:none!important;border-right:1px solid #0f172a!important;width:auto!important;padding:4px 10px!important;font-size:11px!important}
+  .pos-art{flex:1!important}
+  .pos-art--hidden{display:none!important}
+  .pos-invoice{width:100%!important;border-left:none!important;border-top:2px solid #0f172a;flex:1!important}
+  .pos-invoice--hidden{display:none!important}
+  .pos-tablebar{height:64px!important;min-height:64px!important}
+  .pos-tablebar>button,
+  .pos-tablebar span{font-size:9px!important}
+  .pos-mobile-switch{display:flex!important}
+}
+.pos-mobile-switch{display:none;flex-shrink:0;background:#0f172a;border-top:1px solid #166534}
+.pos-mobile-tab{flex:1;padding:10px 0;border:none;background:transparent;color:#64748b;font-size:.82rem;font-weight:600;cursor:pointer;border-top:2px solid transparent;font-family:inherit}
+.pos-mobile-tab--active{color:#4ade80;border-top-color:#16a34a;background:rgba(22,163,74,.08)}
 `;
