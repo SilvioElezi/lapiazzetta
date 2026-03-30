@@ -38,7 +38,7 @@ function calcTotals(cart: CartItem[]) {
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-type Article  = { id: string; code: string; name: string; price: number; category: string; vat_rate: number; section: string; description?: string; image_url?: string; };
+type Article  = { id: string; code: string; name: string; price: number; category: string; vat_rate: number; section: string; description?: string; image_url?: string; order_count?: number; };
 type CartItem = { article: Article; qty: number; };
 type InvItem  = { id: string; article_name: string; quantity: number; unit_price: number; vat_rate: number; total_price: number; };
 type OpenInv  = { id: string; table_id: string | null; total: number; invoice_items?: InvItem[]; };
@@ -1278,17 +1278,22 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
     return categories.filter(c => sectionCats.includes(c));
   }, [categories, sectionCats]);
 
-  const filtered = useMemo(() => articles.filter(a =>
-    (sectionCats === null || sectionCats.includes(a.category)) &&
-    (selCat === "all" || a.category === selCat) &&
-    (!search || a.name.toLowerCase().includes(search.toLowerCase()))
-  ), [articles, selCat, search, sectionCats]);
+  const filtered = useMemo(() => articles
+    .filter(a =>
+      (sectionCats === null || sectionCats.includes(a.category)) &&
+      (selCat === "all" || a.category === selCat) &&
+      (!search || a.name.toLowerCase().includes(search.toLowerCase()))
+    )
+    .sort((a, b) => (b.order_count ?? 0) - (a.order_count ?? 0))
+  , [articles, selCat, search, sectionCats]);
 
   const totals = useMemo(() => calcTotals(cart), [cart]);
 
-  function addArticle(a: Article) {
+  const [qtyModal, setQtyModal] = useState<{ article: Article; qty: number } | null>(null);
+
+  function addArticle(a: Article, qty = 1) {
     if (search) setSearch("");
-    setCart(prev => { const idx=prev.findIndex(c=>c.article.id===a.id); if (idx>=0) { const n=[...prev]; n[idx]={...n[idx],qty:n[idx].qty+1}; return n; } return [...prev,{article:a,qty:1}]; });
+    setCart(prev => { const idx=prev.findIndex(c=>c.article.id===a.id); if (idx>=0) { const n=[...prev]; n[idx]={...n[idx],qty:n[idx].qty+qty}; return n; } return [...prev,{article:a,qty}]; });
   }
   function changeQty(id: string, delta: number) { setCart(prev=>prev.map(c=>c.article.id===id?{...c,qty:c.qty+delta}:c).filter(c=>c.qty>0)); }
   function selectTable(t: KioskTable) {
@@ -1527,15 +1532,21 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
                 <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:"#64748b" }}>Caricamento…</div>
               ) : (
                 <div style={{ flex:1, overflowY:"auto", padding:10, display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))", gap:8, alignContent:"start" }}>
-                  {filtered.map(a => (
-                    <button key={a.id} onClick={()=>addArticle(a)}
-                      style={{ background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:6, padding:"8px 6px", cursor:"pointer", textAlign:"center" }}
-                      onMouseEnter={e=>{ e.currentTarget.style.background="#dbeafe"; e.currentTarget.style.borderColor="#93c5fd"; }}
-                      onMouseLeave={e=>{ e.currentTarget.style.background="#f8fafc"; e.currentTarget.style.borderColor="#e2e8f0"; }}>
-                      <div style={{ color:"#0f172a", fontSize:11, fontWeight:600, lineHeight:1.3, marginBottom:4 }}>{a.name}</div>
-                      <div style={{ color:"#1d4ed8", fontSize:12, fontWeight:700 }}>{eur(a.price)}</div>
-                    </button>
-                  ))}
+                  {filtered.map((a, idx) => {
+                    const inCart = cart.find(c=>c.article.id===a.id);
+                    const isTop = idx < 5 && (a.order_count ?? 0) > 0;
+                    return (
+                      <button key={a.id} onClick={()=>setQtyModal({article:a, qty:1})}
+                        style={{ position:"relative", background: inCart?"#dbeafe":"#f8fafc", border:`1px solid ${inCart?"#93c5fd":"#e2e8f0"}`, borderRadius:6, padding:"8px 6px", cursor:"pointer", textAlign:"center", WebkitTapHighlightColor:"transparent" }}
+                        onMouseEnter={e=>{ e.currentTarget.style.background="#dbeafe"; e.currentTarget.style.borderColor="#93c5fd"; }}
+                        onMouseLeave={e=>{ if(!inCart){e.currentTarget.style.background="#f8fafc"; e.currentTarget.style.borderColor="#e2e8f0";} }}>
+                        {isTop && <span style={{position:"absolute",top:-5,right:-5,background:"#f59e0b",color:"#fff",fontSize:9,fontWeight:700,borderRadius:999,padding:"1px 5px",lineHeight:1.4}}>🔥</span>}
+                        {inCart && <span style={{position:"absolute",top:-5,left:-5,background:"#1d4ed8",color:"#fff",fontSize:9,fontWeight:700,borderRadius:999,width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center"}}>{inCart.qty}</span>}
+                        <div style={{ color:"#0f172a", fontSize:11, fontWeight:600, lineHeight:1.3, marginBottom:4 }}>{a.name}</div>
+                        <div style={{ color:"#1d4ed8", fontSize:12, fontWeight:700 }}>{eur(a.price)}</div>
+                      </button>
+                    );
+                  })}
                   {filtered.length===0 && !loading && (
                     <p style={{ color:"#64748b", gridColumn:"1/-1", textAlign:"center", marginTop:40, fontSize:13 }}>
                       {articles.length===0?"Nessun articolo nel database":"Nessun risultato"}
@@ -1627,6 +1638,33 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
             })}
             {tables.filter(t=>t.active).length===0 && <span style={{ color:"#475569", fontSize:12 }}>Nessun tavolo — aggiungili dalla tab Tavoli</span>}
           </div>
+
+          {/* Qty picker modal */}
+          {qtyModal && (
+            <>
+              <div onClick={()=>setQtyModal(null)} style={{position:"fixed",inset:0,zIndex:302,background:"rgba(0,0,0,.65)"}}/>
+              <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",zIndex:303,background:"#1e293b",borderRadius:18,padding:"24px 24px 20px",width:"min(88vw,320px)",display:"flex",flexDirection:"column",gap:16,boxShadow:"0 24px 60px rgba(0,0,0,.7)"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                  <div>
+                    <p style={{color:"#f1f5f9",fontWeight:700,fontSize:"1rem",lineHeight:1.3}}>{qtyModal.article.name}</p>
+                    <p style={{color:"#64748b",fontSize:".82rem",marginTop:3}}>{eur(qtyModal.article.price)} cad.</p>
+                  </div>
+                  <button onClick={()=>setQtyModal(null)} style={{background:"#334155",border:"none",width:28,height:28,borderRadius:"50%",color:"#94a3b8",cursor:"pointer",fontSize:".85rem",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                </div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:20}}>
+                  <button onClick={()=>setQtyModal(p=>p?{...p,qty:Math.max(1,p.qty-1)}:null)}
+                    style={{width:52,height:52,borderRadius:"50%",border:"2px solid #334155",background:"#0f172a",color:"#f1f5f9",fontSize:"1.6rem",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>−</button>
+                  <span style={{color:"#f1f5f9",fontSize:"2.2rem",fontWeight:700,fontFamily:"Georgia,serif",minWidth:40,textAlign:"center"}}>{qtyModal.qty}</span>
+                  <button onClick={()=>setQtyModal(p=>p?{...p,qty:p.qty+1}:null)}
+                    style={{width:52,height:52,borderRadius:"50%",border:"2px solid #334155",background:"#0f172a",color:"#f1f5f9",fontSize:"1.6rem",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>+</button>
+                </div>
+                <button onClick={()=>{ addArticle(qtyModal.article, qtyModal.qty); setQtyModal(null); setCassaMobile("conto"); }}
+                  style={{padding:"13px 0",background:"#16a34a",border:"none",borderRadius:12,color:"#fff",fontSize:".95rem",fontWeight:700,cursor:"pointer"}}>
+                  ✓ Aggiungi {qtyModal.qty} — {eur(qtyModal.article.price * qtyModal.qty)}
+                </button>
+              </div>
+            </>
+          )}
 
           {/* Payment modal */}
           {payModal && (

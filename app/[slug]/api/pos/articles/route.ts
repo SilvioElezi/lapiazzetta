@@ -63,6 +63,22 @@ export async function GET(
 
   const { data: raw, error: artErr } = await query;
 
+  // Frequency: count how many times each article was ordered in the last 30 days
+  const freqMap: Record<string, number> = {};
+  if (!isAdmin) {
+    const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
+    const { data: invIds } = await supabaseAdmin
+      .from("invoices").select("id").eq("business_id", bid).gte("created_at", since);
+    if (invIds && invIds.length > 0) {
+      const ids = invIds.map((i: { id: string }) => i.id);
+      const { data: freqRows } = await supabaseAdmin
+        .from("invoice_items").select("article_id").in("invoice_id", ids);
+      for (const row of freqRows ?? []) {
+        if (row.article_id) freqMap[row.article_id] = (freqMap[row.article_id] || 0) + 1;
+      }
+    }
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const articles = (raw ?? []).map((a: any) => ({
     id:          String(a.id),
@@ -80,6 +96,7 @@ export async function GET(
     show_cassa:  a.show_cassa !== false,
     show_kiosk:  a.show_kiosk === true,
     show_online: a.show_online === true,
+    order_count: freqMap[String(a.id)] ?? 0,
   }));
 
   const categories = [...new Set(articles.map((a: { category: string }) => a.category))];
