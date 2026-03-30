@@ -115,5 +115,7 @@ export async function GET(
       vat_error:     vatErr,
       menu_error:    menuErr,
     },
+  }, {
+    headers: { "Cache-Control": "no-store, no-cache, must-revalidate" },
   });
 }
