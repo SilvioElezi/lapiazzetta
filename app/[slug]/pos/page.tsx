@@ -15,6 +15,15 @@ const DAY_LABELS: Record<string, string> = {
   thursday:"Giovedì", friday:"Venerdì", saturday:"Sabato", sunday:"Domenica",
 };
 const DAY_KEYS = ["monday","tuesday","wednesday","thursday","friday","saturday","sunday"];
+const DEFAULT_HOURS: WeekHours = {
+  monday:    { open: false, from: "11:45", to: "14:00", from2: "18:00", to2: "22:00" },
+  tuesday:   { open: true,  from: "11:45", to: "14:00", from2: "18:00", to2: "22:00" },
+  wednesday: { open: true,  from: "11:45", to: "14:00", from2: "18:00", to2: "22:00" },
+  thursday:  { open: true,  from: "11:45", to: "14:00", from2: "18:00", to2: "22:00" },
+  friday:    { open: true,  from: "11:45", to: "14:00", from2: "18:00", to2: "22:00" },
+  saturday:  { open: true,  from: "11:45", to: "14:00", from2: "18:00", to2: "22:00" },
+  sunday:    { open: true,  from: "11:45", to: "14:00", from2: "18:00", to2: "22:00" },
+};
 
 function catLabel(c: string) { return c; }
 function calcTotals(cart: CartItem[]) {
@@ -171,7 +180,7 @@ function OrdersTab({ role, slug, activeShift, onShiftUpdated, staffUser }: {
 // ─── SETTINGS TAB ─────────────────────────────────────────────────────────────
 function SettingsTab({ slug }: { slug: string }) {
   const [onlineOrders, setOnlineOrders] = useState(true);
-  const [hours, setHours]               = useState<WeekHours | null>(null);
+  const [hours, setHours]               = useState<WeekHours>(DEFAULT_HOURS);
   const [deliveryFee, setDeliveryFee]   = useState("0");
   const [sections, setSections]         = useState<{ name: string; emoji: string }[]>([]);
   const [newSecName, setNewSecName]     = useState("");
@@ -183,7 +192,7 @@ function SettingsTab({ slug }: { slug: string }) {
   useEffect(() => {
     fetch(`/${slug}/api/settings`).then((r) => r.json()).then((data) => {
       setOnlineOrders(data.online_orders ?? true);
-      setHours(data.hours ?? null);
+      setHours(data.hours ?? DEFAULT_HOURS);
       setDeliveryFee(data.delivery_fee != null ? String(data.delivery_fee) : "0");
       setSections(data.sections ?? [{ name:"Bar", emoji:"🍹" }, { name:"Pizzeria", emoji:"🍕" }]);
     });
@@ -194,7 +203,7 @@ function SettingsTab({ slug }: { slug: string }) {
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
   };
   const updateDay = (day: string, field: keyof DayHours, val: unknown) => {
-    setHours((prev) => { if (!prev) return prev; return { ...prev, [day]: { ...prev[day as keyof WeekHours], [field]: val } }; });
+    setHours((prev) => ({ ...prev, [day]: { ...prev[day as keyof WeekHours], [field]: val } }));
   };
   return (
     <div className="tab-content">
@@ -249,8 +258,7 @@ function SettingsTab({ slug }: { slug: string }) {
             <button className="btn-save-hours" onClick={()=>saveSetting("hours",hours)}>Salva orari</button>
           </div>
         </div>
-        {hours && (
-          <div className="hours-editor">
+        <div className="hours-editor">
             {DAY_KEYS.map((day) => {
               const d = hours[day as keyof WeekHours];
               return (
@@ -282,7 +290,6 @@ function SettingsTab({ slug }: { slug: string }) {
               );
             })}
           </div>
-        )}
       </div>
       {/* ── Sections management ── */}
       <div className="settings-card">
