@@ -982,7 +982,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
       setArticles(d.articles??[]);
       setCategories(d.categories??[]);
       setSections(d.sections??[]);
-      setArticleError((d.debug?.barpro_count??0)===0&&(d.debug?.menu_count??0)===0 ? `Nessun articolo. Debug: ${JSON.stringify(d.debug)}` : null);
+      setArticleError((d.debug?.total??0)===0 ? `Nessun articolo. Debug: ${JSON.stringify(d.debug)}` : null);
     } catch (e) { setArticleError(`Errore: ${String(e)}`); }
   }, [slug]);
 
