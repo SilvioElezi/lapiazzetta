@@ -187,6 +187,8 @@ function SettingsTab({ slug }: { slug: string }) {
   const [newSecEmoji, setNewSecEmoji]   = useState("🏠");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved]   = useState(false);
+  const [origin, setOrigin] = useState("");
+  useEffect(() => { setOrigin(window.location.origin); }, []);
   useEffect(() => {
     fetch(`/${slug}/api/settings`).then((r) => r.json()).then((data) => {
       setOnlineOrders(data.online_orders ?? true);
@@ -213,6 +215,27 @@ function SettingsTab({ slug }: { slug: string }) {
           </button>
         </div>
         {!onlineOrders && <div className="settings-card__warning">⚠️ Gli ordini online sono disattivati.</div>}
+      </div>
+      <div className="settings-card">
+        <div className="settings-card__head"><div><h3 className="settings-card__title">Link utili</h3><p className="settings-card__sub">Copia e incolla questi link per il kiosk e il menu online</p></div></div>
+        <div style={{padding:"12px 20px 16px",display:"flex",flexDirection:"column",gap:10}}>
+          {[
+            { label:"🌐 Menu online / Ordini", url:`${origin}/${slug}` },
+            { label:"🪑 Kiosk (senza tavolo)", url:`${origin}/${slug}/kiosk` },
+          ].map(({ label, url }) => (
+            <div key={label} style={{display:"flex",alignItems:"center",gap:8,padding:"10px 12px",background:"#F5EADA",borderRadius:8,border:"1px solid #EDE0CC"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{fontSize:".72rem",fontWeight:600,color:"#7A7770",marginBottom:2}}>{label}</p>
+                <p style={{fontSize:".78rem",color:"#1C1C1A",fontFamily:"monospace",wordBreak:"break-all",lineHeight:1.4}}>{url}</p>
+              </div>
+              <button
+                onClick={()=>navigator.clipboard.writeText(url)}
+                style={{flexShrink:0,padding:"7px 12px",background:"#fff",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".8rem",cursor:"pointer",color:"#3A3A36",fontFamily:"inherit",whiteSpace:"nowrap"}}
+              >📋 Copia</button>
+            </div>
+          ))}
+          <p style={{fontSize:".72rem",color:"#7A7770",lineHeight:1.5}}>Per il kiosk di un tavolo specifico usa il link generato nella scheda <strong>Tavoli</strong> (include il token del tavolo).</p>
+        </div>
       </div>
       <div className="settings-card">
         <div className="settings-card__head">
