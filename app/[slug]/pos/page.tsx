@@ -47,29 +47,116 @@ type PosTab   = "cassa" | "orders" | "menu" | "tables" | "settings" | "shifts" |
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 function LoginScreen({ onLogin, slug }: { onLogin: (u: StaffUser) => void; slug: string }) {
-  const [u, setU] = useState(""); const [p, setP] = useState("");
-  const [err, setErr] = useState(""); const [loading, setLoading] = useState(false);
-  const login = async () => {
-    if (!u || !p) return; setLoading(true); setErr("");
-    try {
-      const res = await fetch(`/${slug}/api/auth`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ username:u, password:p }) });
-      const d = await res.json();
-      if (!res.ok) setErr(d.error ?? "Errore");
-      else { const user = { ...d.user, businesses: d.businesses ?? [] }; localStorage.setItem("shop_user", JSON.stringify(user)); onLogin(user); }
-    } catch { setErr("Errore di connessione"); } finally { setLoading(false); }
+  type StaffEntry = { id: number; name: string; role: string; username: string; display_role: string | null; active: boolean };
+  const [staffList, setStaffList] = useState<StaffEntry[]>([]);
+  const [selected,  setSelected]  = useState<StaffEntry | null>(null);
+  const [pin,       setPin]       = useState("");
+  const [err,       setErr]       = useState("");
+  const [loading,   setLoading]   = useState(false);
+
+  useEffect(() => {
+    fetch(`/${slug}/api/staff`)
+      .then(r => r.json())
+      .then((d: StaffEntry[]) => setStaffList((d ?? []).filter(s => s.active !== false)));
+  }, [slug]);
+
+  const pressKey = (k: string) => {
+    setErr("");
+    if (k === "⌫") { setPin(p => p.slice(0, -1)); return; }
+    if (pin.length >= 12) return;
+    setPin(p => p + k);
   };
-  const S: React.CSSProperties = { width:"100%", background:"#0f172a", border:"1px solid #334155", borderRadius:8, padding:"10px 14px", color:"#f1f5f9", fontSize:15, marginBottom:12, boxSizing:"border-box" };
+
+  const doLogin = async () => {
+    if (!selected || !pin || loading) return;
+    setLoading(true); setErr("");
+    try {
+      const res = await fetch(`/${slug}/api/auth`, { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ username: selected.username, password: pin }) });
+      const d = await res.json();
+      if (!res.ok) { setErr(d.error ?? "PIN errato"); setPin(""); }
+      else { const user = { ...d.user, businesses: d.businesses ?? [] }; localStorage.setItem("shop_user", JSON.stringify(user)); onLogin(user); }
+    } catch { setErr("Errore di connessione"); setPin(""); } finally { setLoading(false); }
+  };
+
+  const KEYS = ["7","8","9","4","5","6","1","2","3","⌫","0","✓"];
+  const roleLabel = (s: StaffEntry) => s.display_role || (s.role==="admin" ? "Admin" : s.role==="reception" ? "Reception" : "Delivery");
+
   return (
-    <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", background:"#0f172a" }}>
-      <div style={{ background:"#1e293b", borderRadius:16, padding:40, width:340, boxShadow:"0 25px 50px #0008" }}>
-        <div style={{ fontSize:48, textAlign:"center", marginBottom:8 }}>🍕</div>
-        <h1 style={{ color:"#f1f5f9", textAlign:"center", fontSize:22, fontWeight:700, margin:"0 0 24px" }}>La Piazzetta</h1>
-        <input style={S} placeholder="Username" value={u} autoFocus onChange={e=>setU(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()} />
-        <input style={S} placeholder="Password" type="password" value={p} onChange={e=>setP(e.target.value)} onKeyDown={e=>e.key==="Enter"&&login()} />
-        <button onClick={login} disabled={loading} style={{ width:"100%", background:"#2563eb", color:"#fff", border:"none", borderRadius:8, padding:"12px 0", fontSize:15, fontWeight:600, cursor:"pointer" }}>
-          {loading ? "Accesso…" : "Accedi"}
-        </button>
-        {err && <p style={{ color:"#f87171", textAlign:"center", marginTop:12, fontSize:13 }}>{err}</p>}
+    <div style={{minHeight:"100vh", display:"flex", background:"#1A1A18", fontFamily:"Georgia,serif", userSelect:"none"}}>
+
+      {/* ── Left: staff list ── */}
+      <div style={{width:280, flexShrink:0, display:"flex", flexDirection:"column", borderRight:"1px solid #2A2A28", background:"#1C1C1A"}}>
+        <div style={{padding:"32px 24px 24px", textAlign:"center", borderBottom:"1px solid #2A2A28"}}>
+          <div style={{fontSize:36, marginBottom:8}}>🍕</div>
+          <p style={{color:"#FDF6EC", fontWeight:700, fontSize:"1rem", margin:0}}>La Piazzetta</p>
+          <p style={{color:"#5A5A56", fontSize:".7rem", margin:"4px 0 0", textTransform:"uppercase", letterSpacing:".1em"}}>POS</p>
+        </div>
+        <div style={{flex:1, overflowY:"auto", padding:"16px 12px", display:"flex", flexDirection:"column", gap:8}}>
+          {staffList.map(s => {
+            const active = selected?.id === s.id;
+            return (
+              <button key={s.id} onClick={() => { setSelected(s); setPin(""); setErr(""); }}
+                style={{display:"flex", alignItems:"center", gap:12, padding:"14px 16px", borderRadius:10, cursor:"pointer", border: active ? "none" : "1px solid #2E2E2C", background: active ? "#B03A2E" : "#242422", textAlign:"left", transition:"background .15s"}}>
+                <span style={{fontSize:"1.5rem", flexShrink:0}}>👤</span>
+                <div style={{minWidth:0}}>
+                  <p style={{color:"#FDF6EC", fontSize:".9rem", fontWeight:600, margin:0, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap"}}>{s.name}</p>
+                  <p style={{color: active ? "rgba(253,246,236,.65)" : "#5A5A56", fontSize:".72rem", margin:"2px 0 0"}}>{roleLabel(s)}</p>
+                </div>
+              </button>
+            );
+          })}
+          {staffList.length === 0 && (
+            <p style={{color:"#3A3A36", fontSize:".8rem", textAlign:"center", marginTop:32}}>Nessun utente trovato</p>
+          )}
+        </div>
+      </div>
+
+      {/* ── Right: numpad ── */}
+      <div style={{flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:20, padding:40}}>
+        <p style={{color:"#5A5A56", fontSize:".72rem", textTransform:"uppercase", letterSpacing:".1em", margin:0}}>
+          {selected ? `Inserisci PIN · ${selected.name}` : "Seleziona un utente"}
+        </p>
+
+        {/* PIN dots display */}
+        <div style={{width:240, height:56, background:"#242422", border:"1.5px solid #2E2E2C", borderRadius:12, display:"flex", alignItems:"center", justifyContent:"center", gap:10}}>
+          {pin.length === 0
+            ? <span style={{color:"#3A3A36", fontSize:".85rem", letterSpacing:".1em"}}>· · · · · ·</span>
+            : Array.from({length: pin.length}).map((_, i) => (
+                <span key={i} style={{width:12, height:12, borderRadius:"50%", background:"#FDF6EC", display:"inline-block"}}/>
+              ))
+          }
+        </div>
+
+        {/* Numpad grid */}
+        <div style={{display:"grid", gridTemplateColumns:"repeat(3, 88px)", gap:10}}>
+          {KEYS.map(k => {
+            const isConfirm  = k === "✓";
+            const isBackspace = k === "⌫";
+            const disabled = isConfirm && (!selected || !pin || loading);
+            return (
+              <button key={k}
+                onClick={() => isConfirm ? doLogin() : pressKey(k)}
+                disabled={!!disabled}
+                style={{
+                  height: 80, borderRadius: 12, border: "none", cursor: disabled ? "not-allowed" : "pointer",
+                  fontSize: isBackspace || isConfirm ? "1.6rem" : "1.8rem",
+                  fontFamily: "Georgia,serif", fontWeight: 700,
+                  background: isConfirm ? (disabled ? "#4A1A10" : "#B03A2E") : isBackspace ? "#1E1E1C" : "#2A2A28",
+                  color: "#FDF6EC",
+                  outline: "1px solid #333330",
+                  opacity: disabled ? 0.4 : 1,
+                  transition: "background .12s, transform .08s",
+                  WebkitTapHighlightColor: "transparent",
+                }}
+                onPointerDown={e => { if (!disabled) (e.currentTarget as HTMLButtonElement).style.transform = "scale(.93)"; }}
+                onPointerUp={e => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
+                onPointerLeave={e => { (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)"; }}
+              >{loading && isConfirm ? "…" : k}</button>
+            );
+          })}
+        </div>
+
+        {err && <p style={{color:"#F87171", fontSize:".82rem", margin:0}}>{err}</p>}
       </div>
     </div>
   );
