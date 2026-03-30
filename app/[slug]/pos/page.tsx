@@ -10,26 +10,17 @@ type OpenInv  = { id: string; table_id: string | null; total: number; };
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const eur = (n: number) => "€ " + n.toFixed(2).replace(".", ",");
 
-// Italian category names mapped from BarPRO porosi_id
-// Update these once the Oracle porosia table IDs are confirmed
-const CAT_LABELS: Record<string, string> = {
-  "1":  "Caffetteria",
-  "2":  "Bibite",
-  "3":  "Birra",
-  "4":  "Gin / Tequila",
-  "5":  "Whisky",
-  "6":  "Vodka",
-  "7":  "Amaro",
-  "8":  "Vino",
-  "9":  "Liquori",
-  "10": "Cognac",
-  "11": "Rum",
-  "12": "Long Drinks",
-  "13": "Cocktail",
-  "14": "Shots",
-  "0":  "Varie",
+// BarPRO porosi_id → Italian category label
+const BP_CAT: Record<string, string> = {
+  "1":"Caffetteria","2":"Bibite","3":"Birra","4":"Gin / Tequila",
+  "5":"Whisky","6":"Vodka","7":"Amaro","8":"Vino","9":"Liquori",
+  "10":"Cognac","11":"Rum","12":"Long Drinks","13":"Cocktail","14":"Shots","0":"Varie",
 };
-const catLabel = (c: string) => CAT_LABELS[c] ?? `Cat. ${c}`;
+function catLabel(c: string) {
+  if (c.startsWith("bp_"))   return BP_CAT[c.slice(3)] ?? `Cat. ${c.slice(3)}`;
+  if (c.startsWith("menu_")) return c.slice(5); // "menu_Pizza" → "Pizza"
+  return c;
+}
 
 function calcTotals(cart: CartItem[]) {
   const total      = cart.reduce((s, c) => s + c.article.price * c.qty, 0);
@@ -90,6 +81,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
   const [paying,        setPaying]        = useState(false);
   const [payErr,        setPayErr]        = useState("");
   const [loading,       setLoading]       = useState(true);
+  const [articleError,  setArticleError]  = useState<string | null>(null);
 
   // Auth
   useEffect(() => {
@@ -109,10 +101,18 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
 
   const loadArticles = useCallback(async () => {
     const res = await fetch(`/${slug}/api/pos/articles`);
-    if (res.ok) {
-      const d = await res.json();
-      setArticles(d.articles ?? []);
-      setCategories(d.categories ?? []);
+    const d = await res.json();
+    if (!res.ok) {
+      setArticleError(d.error ?? "Errore caricamento articoli");
+      return;
+    }
+    setArticles(d.articles ?? []);
+    setCategories(d.categories ?? []);
+    // Show debug info if both sources returned 0 items
+    if ((d.debug?.barpro_count ?? 0) === 0 && (d.debug?.menu_count ?? 0) === 0) {
+      setArticleError(`Nessun articolo trovato. Debug: ${JSON.stringify(d.debug)}`);
+    } else {
+      setArticleError(null);
     }
   }, [slug]);
 
@@ -172,7 +172,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
           table_id:       selTable.id,
           employee_id:    user?.id,
           items:          cart.map(c => ({
-            article_id:   c.article.id,
+            article_id:   c.article.id.startsWith("menu_") ? null : c.article.id,
             article_code: c.article.code,
             article_name: c.article.name,
             quantity:     c.qty,
@@ -257,6 +257,11 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
             />
           </div>
 
+          {articleError && (
+            <div style={{ margin:12, padding:12, background:"#450a0a", border:"1px solid #991b1b", borderRadius:8, color:"#fca5a5", fontSize:12 }}>
+              ⚠ {articleError}
+            </div>
+          )}
           {loading ? (
             <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:"#64748b" }}>Caricamento…</div>
           ) : (
