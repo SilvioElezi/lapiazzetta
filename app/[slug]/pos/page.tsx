@@ -1205,7 +1205,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
   const [user,         setUser]         = useState<StaffUser | null>(null);
   const [authChecked,  setAuthChecked]  = useState(false);
   const [tab,          setTab]          = useState<PosTab>("cassa");
-  const [cassaMobile,  setCassaMobile]  = useState<"menu"|"conto">("menu");
+  const [cassaMobile,  setCassaMobile]  = useState<"tavoli"|"menu"|"conto">("tavoli");
   const [activeShift,  setActiveShift]  = useState<DeliveryShift | null>(null);
 
   // Cassa state
@@ -1307,7 +1307,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
       setCart([]);
       setOpenInvId(null);
     }
-    setSelTable(t); setPayErr(""); setSelCat("all"); setSearch("");
+    setSelTable(t); setPayErr(""); setSelCat("all"); setSearch(""); setCassaMobile("menu");
   }
 
   function buildItems() {
@@ -1370,7 +1370,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
         const data = await res.json();
         if (!res.ok) { setPayErr(data.error ?? "Errore"); return; }
       }
-      setCart([]); setSelTable(null); setOpenInvId(null); setPayModal(false); setCassaMobile("menu");
+      setCart([]); setSelTable(null); setOpenInvId(null); setPayModal(false); setCassaMobile("tavoli");
       await loadTables();
     } catch { setPayErr("Errore di connessione"); } finally { setPaying(false); }
   }
@@ -1416,8 +1416,30 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
         <div className="pos-cassa-outer" style={{ flex:1, display:"flex", overflow:"hidden", minHeight:0, flexDirection:"column" }}>
           {/* Main body */}
           <div className="pos-cassa-body" style={{ flex:1, display:"flex", overflow:"hidden", minHeight:0 }}>
+
+            {/* Mobile: tables grid panel */}
+            <div className={`pos-tables-mobile${cassaMobile!=="tavoli"?" pos-tables-mobile--hidden":""}`}>
+              <div style={{padding:"12px 14px 6px", color:"#64748b", fontSize:11, fontWeight:700, letterSpacing:1, textTransform:"uppercase"}}>
+                {selTable ? `✅ Tavolo: ${selTable.name}` : "Seleziona un tavolo"}
+              </div>
+              <div style={{flex:1, overflowY:"auto", padding:"6px 12px 12px", display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(90px,1fr))", gap:10, alignContent:"start"}}>
+                {tables.filter(t=>t.active).map(t => {
+                  const inv = invMap[t.id]; const occupied = !!inv; const isActive = selTable?.id===t.id;
+                  const label = t.name.replace(/[^0-9]/g,"")||t.name;
+                  return (
+                    <button key={t.id} onClick={()=>selectTable(t)}
+                      style={{height:90, borderRadius:12, border:`2px solid ${isActive?"#60a5fa":occupied?"#f59e0b":"#334155"}`, background:isActive?"#1d4ed8":occupied?"#92400e":"#1e293b", color:"#fff", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:5, WebkitTapHighlightColor:"transparent"}}>
+                      <span style={{fontSize:26, fontWeight:700, lineHeight:1}}>{label}</span>
+                      {occupied ? <span style={{fontSize:11, color:"#fcd34d", fontWeight:600}}>{eur(inv.total)}</span> : <span style={{fontSize:11, color:"#475569"}}>libero</span>}
+                    </button>
+                  );
+                })}
+                {tables.filter(t=>t.active).length===0 && <p style={{color:"#475569", fontSize:13, gridColumn:"1/-1", textAlign:"center", marginTop:48}}>Nessun tavolo — aggiungili dalla tab Tavoli</p>}
+              </div>
+            </div>
+
             {/* Categories — two-level */}
-            <div className="pos-sidebar" style={{ width:168, background:"#1e293b", display:"flex", flexDirection:"column", borderRight:"1px solid #0f172a", overflow:"hidden" }}>
+            <div className={`pos-sidebar${cassaMobile==="tavoli"?" pos-sidebar--hidden":""}`} style={{ width:168, background:"#1e293b", display:"flex", flexDirection:"column", borderRight:"1px solid #0f172a", overflow:"hidden" }}>
               {/* Section buttons */}
               <div style={{ background:"#0f172a", padding:"6px 8px", display:"flex", flexDirection:"column", gap:3, flexShrink:0, borderBottom:"2px solid #0f172a" }}>
                 <button onClick={()=>{ setSelSection(null); setSelCat("all"); setSearch(""); }}
@@ -1450,10 +1472,10 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
             </div>
 
             {/* Articles */}
-            <div className={`pos-art${cassaMobile==="conto" ? " pos-art--hidden" : ""}`} style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
-              <div style={{ background:"#166534", padding:"8px 12px", fontSize:12, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#bbf7d0", display:"flex", alignItems:"center", gap:10 }}>
+            <div className={`pos-art${(cassaMobile==="conto"||cassaMobile==="tavoli") ? " pos-art--hidden" : ""}`} style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+              <div className="pos-search-bar" style={{ background:"#166534", padding:"8px 12px", fontSize:12, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#bbf7d0", display:"flex", alignItems:"center", gap:10 }}>
                 <span style={{ flex:1 }}>Prodotti</span>
-                <input value={search} onChange={e=>{ setSearch(e.target.value); setSelCat("all"); }} placeholder="🔍  Cerca…"
+                <input className="pos-search" value={search} onChange={e=>{ setSearch(e.target.value); setSelCat("all"); }} placeholder="🔍  Cerca…"
                   style={{ background:"#14532d", border:"1px solid #15803d", borderRadius:6, padding:"4px 10px", color:"#f0fdf4", fontSize:12, width:160, outline:"none" }}/>
               </div>
               {articleError && <div style={{ margin:12, padding:12, background:"#450a0a", border:"1px solid #991b1b", borderRadius:8, color:"#fca5a5", fontSize:12 }}>⚠ {articleError}</div>}
@@ -1512,7 +1534,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
                 {payErr && <p style={{ color:"#f87171", fontSize:11, textAlign:"center", margin:"0 12px 6px" }}>{payErr}</p>}
                 <div style={{ display:"flex", flexDirection:"column", gap:6, padding:"10px 12px", borderTop:"1px solid #0f172a" }}>
                   <div style={{ display:"flex", gap:6 }}>
-                    <button onClick={()=>{ setSelTable(null); setOpenInvId(null); setCart([]); setCassaMobile("menu"); }} style={{ flex:1, background:"#0f172a", border:"1px solid #334155", color:"#94a3b8", borderRadius:8, padding:"10px 0", fontSize:12, cursor:"pointer" }}>← Deseleziona</button>
+                    <button onClick={()=>{ setSelTable(null); setOpenInvId(null); setCart([]); setCassaMobile("tavoli"); }} style={{ flex:1, background:"#0f172a", border:"1px solid #334155", color:"#94a3b8", borderRadius:8, padding:"10px 0", fontSize:12, cursor:"pointer" }}>← Deseleziona</button>
                     {cart.length>0 && (
                       <button onClick={sendToTable} disabled={sending} style={{ flex:2, background:"#92400e", border:"none", color:"#fcd34d", borderRadius:8, padding:"10px 0", fontSize:13, fontWeight:700, cursor:"pointer" }}>
                         {sending?"Invio…":"📤 Invia al tavolo"}
@@ -1536,6 +1558,9 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
 
           {/* Mobile view switcher — only visible on small screens */}
           <div className="pos-mobile-switch">
+            <button className={`pos-mobile-tab${cassaMobile==="tavoli"?" pos-mobile-tab--active":""}`} onClick={()=>setCassaMobile("tavoli")}>
+              🪑 Tavoli{selTable?` · ${selTable.name.replace(/[^0-9]/g,"")||selTable.name}`:""}
+            </button>
             <button className={`pos-mobile-tab${cassaMobile==="menu"?" pos-mobile-tab--active":""}`} onClick={()=>setCassaMobile("menu")}>🍕 Menu</button>
             <button className={`pos-mobile-tab${cassaMobile==="conto"?" pos-mobile-tab--active":""}`} onClick={()=>setCassaMobile("conto")}>
               🧾 Conto{cart.length>0?` (${cart.reduce((s,c)=>s+c.qty,0)})`:""}
@@ -1762,6 +1787,16 @@ const shopStyles = `
   .pos-mobile-switch{display:flex!important}
 }
 .pos-mobile-switch{display:none;flex-shrink:0;background:#0f172a;border-top:1px solid #166534}
-.pos-mobile-tab{flex:1;padding:10px 0;border:none;background:transparent;color:#64748b;font-size:.82rem;font-weight:600;cursor:pointer;border-top:2px solid transparent;font-family:inherit}
+.pos-mobile-tab{flex:1;padding:10px 4px;border:none;background:transparent;color:#64748b;font-size:.78rem;font-weight:600;cursor:pointer;border-top:2px solid transparent;font-family:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pos-mobile-tab--active{color:#4ade80;border-top-color:#16a34a;background:rgba(22,163,74,.08)}
+.pos-tables-mobile{display:none;flex-direction:column;flex:1;overflow:hidden;background:#0f172a}
+@media(max-width:768px){
+  .pos-tables-mobile{display:flex}
+  .pos-tables-mobile--hidden{display:none!important}
+  .pos-tablebar{display:none!important}
+  .pos-sidebar--hidden{display:none!important}
+  .pos-search-bar{flex-direction:column!important;padding:10px 12px!important;gap:6px!important;height:auto!important}
+  .pos-search-bar span{font-size:11px!important;letter-spacing:.05em!important}
+  .pos-search{width:100%!important;padding:12px 14px!important;font-size:15px!important;border-radius:8px!important;height:44px}
+}
 `;
