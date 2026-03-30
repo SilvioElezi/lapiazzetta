@@ -1413,6 +1413,9 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                 <button className={`shop__tab${tab === "settings" ? " shop__tab--active" : ""}`} onClick={() => setTab("settings")}>⚙️ Impostazioni</button>
               </>
             )}
+            {(user.role === "reception" || user.role === "admin") && (
+              <a href={`/${slug}/pos`} className="shop__tab" style={{ textDecoration:"none" }}>🖥️ Cassa POS</a>
+            )}
             <button className="shop__tab shop__tab--logout" onClick={logout}>🚪 Esci</button>
           </nav>
         </div>

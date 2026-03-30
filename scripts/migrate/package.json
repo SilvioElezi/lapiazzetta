@@ -1,0 +1,22 @@
+{
+  "name": "barpro-migrate",
+  "version": "1.0.0",
+  "description": "BarPRO Oracle XE → Supabase migration script",
+  "main": "migrate.js",
+  "scripts": {
+    "dry-run": "node migrate.js --dry-run",
+    "migrate": "node migrate.js",
+    "migrate:vat": "node migrate.js --only=vat",
+    "migrate:articles": "node migrate.js --only=articles",
+    "migrate:staff": "node migrate.js --only=staff",
+    "migrate:customers": "node migrate.js --only=customers"
+  },
+  "dependencies": {
+    "oracledb": "^6.7.0",
+    "@supabase/supabase-js": "^2.49.4",
+    "dotenv": "^16.4.7"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
