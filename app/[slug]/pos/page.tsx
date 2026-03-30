@@ -344,6 +344,7 @@ function MenuTab({ slug }: { slug: string }) {
   const [newCatEmoji,  setNewCatEmoji]  = useState("🍕");
   const [newCatSection,setNewCatSection]= useState("");
   const [uploadingImg, setUploadingImg] = useState(false);
+  const [search,       setSearch]       = useState("");
 
   const loadAll = useCallback(async () => {
     const [aRes, mRes, sRes] = await Promise.all([
@@ -435,17 +436,33 @@ function MenuTab({ slug }: { slug: string }) {
     setMenuCats(prev => prev.filter(c => c.id !== cat.id));
   };
 
+  const filtered = useMemo(() => {
+    if (!search.trim()) return articles;
+    const q = search.toLowerCase();
+    return articles.filter(a => a.name.toLowerCase().includes(q) || a.description.toLowerCase().includes(q));
+  }, [articles, search]);
+
   const byCategory = useMemo(() => {
     const m: Record<string, AdminArticle[]> = {};
-    for (const a of articles) { if (!m[a.category]) m[a.category] = []; m[a.category].push(a); }
+    for (const a of filtered) { if (!m[a.category]) m[a.category] = []; m[a.category].push(a); }
     return m;
-  }, [articles]);
+  }, [filtered]);
 
   return (
     <div className="tab-content">
       <div className="menu-toolbar">
-        <span className="menu-toolbar__title">{articles.length} prodotti · {menuCats.length} categorie</span>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+        <span className="menu-toolbar__title">{filtered.length}/{articles.length} prodotti · {menuCats.length} categorie</span>
+        <div style={{display:"flex",gap:8,alignItems:"center",flex:1,justifyContent:"flex-end"}}>
+          <div style={{position:"relative",flex:"0 1 260px"}}>
+            <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",fontSize:".9rem",color:"#B0ACA5",pointerEvents:"none"}}>🔍</span>
+            <input
+              value={search}
+              onChange={e=>setSearch(e.target.value)}
+              placeholder="Cerca prodotto…"
+              style={{width:"100%",padding:"8px 10px 8px 32px",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".85rem",fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}
+            />
+            {search && <button onClick={()=>setSearch("")} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",color:"#B0ACA5",fontSize:".85rem",lineHeight:1}}>✕</button>}
+          </div>
           {saved  && <span className="saved-badge">✓ Salvato</span>}
           {saving && <span className="saving-badge">Salvataggio…</span>}
           <button className="btn-add-cat" onClick={()=>setShowNewCat(!showNewCat)}>+ Categoria</button>
