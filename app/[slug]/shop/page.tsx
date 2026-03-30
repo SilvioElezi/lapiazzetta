@@ -1414,7 +1414,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
               </>
             )}
             {(user.role === "reception" || user.role === "admin") && (
-              <a href={`/${slug}/pos`} className="shop__tab" style={{ textDecoration:"none" }}>🖥️ Cassa POS</a>
+              <a href={`/${urlSlug}/pos`} className="shop__tab" style={{ textDecoration:"none" }}>🖥️ Cassa POS</a>
             )}
             <button className="shop__tab shop__tab--logout" onClick={logout}>🚪 Esci</button>
           </nav>
