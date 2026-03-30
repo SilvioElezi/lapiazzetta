@@ -1307,7 +1307,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
       setCart([]);
       setOpenInvId(null);
     }
-    setSelTable(t); setPayErr(""); setSelCat("all"); setSearch(""); setCassaMobile("menu");
+    setSelTable(t); setPayErr(""); setSelCat("all"); setSearch(""); setCassaMobile("conto");
   }
 
   function buildItems() {
@@ -1787,8 +1787,8 @@ const shopStyles = `
   .pos-mobile-switch{display:flex!important}
 }
 .pos-mobile-switch{display:none;flex-shrink:0;background:#0f172a;border-top:1px solid #166534}
-.pos-mobile-tab{flex:1;padding:10px 4px;border:none;background:transparent;color:#64748b;font-size:.78rem;font-weight:600;cursor:pointer;border-top:2px solid transparent;font-family:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pos-mobile-tab--active{color:#4ade80;border-top-color:#16a34a;background:rgba(22,163,74,.08)}
+.pos-mobile-tab{flex:1;padding:14px 4px;border:none;background:transparent;color:#64748b;font-size:.88rem;font-weight:600;cursor:pointer;border-top:3px solid transparent;font-family:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;-webkit-tap-highlight-color:transparent}
+.pos-mobile-tab--active{color:#4ade80;border-top-color:#16a34a;background:rgba(22,163,74,.1)}
 .pos-tables-mobile{display:none;flex-direction:column;flex:1;overflow:hidden;background:#0f172a}
 @media(max-width:768px){
   .pos-tables-mobile{display:flex}
@@ -1798,5 +1798,7 @@ const shopStyles = `
   .pos-search-bar{flex-direction:column!important;padding:10px 12px!important;gap:6px!important;height:auto!important}
   .pos-search-bar span{font-size:11px!important;letter-spacing:.05em!important}
   .pos-search{width:100%!important;padding:12px 14px!important;font-size:15px!important;border-radius:8px!important;height:44px}
+  .pos-mobile-switch{position:fixed!important;bottom:0;left:0;right:0;z-index:50;box-shadow:0 -4px 24px rgba(0,0,0,.5);border-top:2px solid #166534}
+  .pos-cassa-outer{padding-bottom:62px}
 }
 `;
