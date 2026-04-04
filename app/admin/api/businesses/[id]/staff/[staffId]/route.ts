@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { hashSync } from "bcryptjs";
 
 export async function PATCH(
   req: NextRequest,
@@ -11,7 +12,7 @@ export async function PATCH(
   const update: Record<string, string> = {};
   if (body.name?.trim())     update.name     = body.name.trim();
   if (body.username?.trim()) update.username = body.username.trim();
-  if (body.password?.trim()) update.password = body.password.trim();
+  if (body.password?.trim()) update.password = hashSync(body.password.trim(), 10);
   if (body.role)             update.role     = body.role;
 
   const { data, error } = await supabaseAdmin
