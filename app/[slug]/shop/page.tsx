@@ -116,6 +116,10 @@ function OrdersTab({ role, slug, activeShift, onShiftUpdated, staffUser }: {
     }
   };
 
+  const printReceipt = (orderId: string) => {
+    window.open(`/${slug}/receipt/${orderId}`, "_blank", "width=360,height=700");
+  };
+
   const confirmHandover = async (shiftId: string) => {
     setConfirmingId(shiftId);
     await fetch(`/${slug}/api/shifts/${shiftId}`, {
@@ -233,6 +237,9 @@ function OrdersTab({ role, slug, activeShift, onShiftUpdated, staffUser }: {
                     ↩ Rimetti nuovo
                   </button>
                 )}
+                <button className="action-btn action-btn--print" onClick={() => printReceipt(order.id)}>
+                  🖨 Scontrino
+                </button>
               </div>
             </div>
           ))}
@@ -1516,6 +1523,7 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA;min-height:100vh}
 .action-btn:hover{opacity:.88;transform:translateY(-1px)}
 .action-btn--ready{background:#4CAF50;color:#fff}
 .action-btn--delivered{background:#1C1C1A;color:#FDF6EC}
+.action-btn--print{background:#F5EADA;color:#1C1C1A;border:1px solid #EDE0CC;flex:0 1 auto;min-width:auto;padding:10px 14px}
 .settings-card{background:#fff;border:1px solid #EDE0CC;border-radius:14px;overflow:hidden}
 .settings-card__head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;gap:12px;flex-wrap:wrap}
 .settings-card__title{font-family:Georgia,serif;font-size:1rem;font-weight:700;color:#1C1C1A;margin-bottom:3px}
