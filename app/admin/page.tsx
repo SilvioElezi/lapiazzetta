@@ -9,6 +9,16 @@ function adminFetchGlobal(url: string, init?: RequestInit) {
   return fetch(url, { ...init, headers });
 }
 
+type SmtpConfig = {
+  host: string; port: number; username: string; password: string;
+  from_email: string; from_name: string; encryption: "tls" | "ssl" | "none"; enabled: boolean;
+};
+
+const EMPTY_SMTP: SmtpConfig = {
+  host: "", port: 587, username: "", password: "",
+  from_email: "", from_name: "", encryption: "tls", enabled: false,
+};
+
 type StaffMember = { id: number; username: string; role: StaffRole; name: string };
 type StaffForm = { name: string; username: string; password: string; role: StaffRole };
 
@@ -36,6 +46,7 @@ export default function AdminPage() {
   const [success,      setSuccess]      = useState("");
   const [locating,     setLocating]     = useState(false);
   const [locationLabel, setLocationLabel] = useState("");
+  const [showSmtp,     setShowSmtp]     = useState(false);
 
   const useMyLocation = () => {
     if (!navigator.geolocation) return;
@@ -213,6 +224,19 @@ export default function AdminPage() {
 
         {success && <div style={s.successBanner}>{success}</div>}
         {error   && <div style={s.errBanner}>{error}</div>}
+
+        {/* ── SMTP Config ── */}
+        <div style={s.formCard}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setShowSmtp((v) => !v)}>
+            <h2 style={{ ...s.formTitle, marginBottom: 0 }}>Server SMTP</h2>
+            <span style={{ fontSize: ".85rem", color: "#7A7770" }}>{showSmtp ? "▲" : "▼"}</span>
+          </div>
+          {showSmtp && (
+            <div style={{ marginTop: 16 }}>
+              <SmtpPanel />
+            </div>
+          )}
+        </div>
 
         {/* ── Edit/Create form ── */}
         {editing !== null && (
@@ -474,6 +498,137 @@ function StaffPanel({ businessId }: { businessId: string }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+function SmtpPanel() {
+  const [smtp, setSmtp] = useState<SmtpConfig>(EMPTY_SMTP);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [testEmail, setTestEmail] = useState("");
+  const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  useEffect(() => {
+    adminFetchGlobal("/admin/api/smtp")
+      .then((r) => r.json())
+      .then((d) => { setSmtp(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    setSaving(true); setMsg(null);
+    try {
+      const res = await adminFetchGlobal("/admin/api/smtp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(smtp),
+      });
+      const d = await res.json();
+      if (!res.ok) setMsg({ type: "err", text: d.error ?? "Errore" });
+      else setMsg({ type: "ok", text: "Configurazione SMTP salvata!" });
+    } catch { setMsg({ type: "err", text: "Errore di connessione" }); }
+    finally { setSaving(false); }
+  };
+
+  const sendTest = async () => {
+    if (!testEmail.includes("@")) { setMsg({ type: "err", text: "Inserisci un indirizzo email valido" }); return; }
+    setTesting(true); setMsg(null);
+    try {
+      const res = await adminFetchGlobal("/admin/api/smtp/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to: testEmail }),
+      });
+      const d = await res.json();
+      if (!res.ok) setMsg({ type: "err", text: d.error ?? "Invio fallito" });
+      else setMsg({ type: "ok", text: `Email di test inviata a ${testEmail}!` });
+    } catch { setMsg({ type: "err", text: "Errore di connessione" }); }
+    finally { setTesting(false); }
+  };
+
+  if (loading) return <p style={{ fontSize: ".8rem", color: "#7A7770", padding: 8 }}>Caricamento SMTP…</p>;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {msg && (
+        <div style={msg.type === "ok" ? s.successBanner : s.errBanner}>{msg.text}</div>
+      )}
+
+      {/* Enable toggle */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <button
+          onClick={() => setSmtp((f) => ({ ...f, enabled: !f.enabled }))}
+          style={{
+            width: 48, height: 26, borderRadius: 13, border: "none", cursor: "pointer",
+            background: smtp.enabled ? "#2E7D32" : "#B0ACA5",
+            position: "relative", transition: "background .2s",
+          }}
+        >
+          <span style={{
+            position: "absolute", top: 3, left: smtp.enabled ? 24 : 3,
+            width: 20, height: 20, borderRadius: 10, background: "#fff",
+            transition: "left .2s", boxShadow: "0 1px 3px rgba(0,0,0,.2)",
+          }} />
+        </button>
+        <span style={{ fontSize: ".88rem", fontWeight: 500, color: smtp.enabled ? "#2E7D32" : "#7A7770" }}>
+          {smtp.enabled ? "SMTP Attivo" : "SMTP Disattivato"}
+        </span>
+      </div>
+
+      <div style={s.grid2}>
+        <Field label="Host SMTP" value={smtp.host} onChange={(v) => setSmtp((f) => ({ ...f, host: v }))} />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <Field label="Porta" value={smtp.port.toString()} onChange={(v) => setSmtp((f) => ({ ...f, port: parseInt(v) || 587 }))} type="number" />
+          <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <span style={s.fieldLabel}>Crittografia</span>
+            <select
+              value={smtp.encryption}
+              onChange={(e) => setSmtp((f) => ({ ...f, encryption: e.target.value as SmtpConfig["encryption"] }))}
+              style={s.input}
+            >
+              <option value="tls">STARTTLS</option>
+              <option value="ssl">SSL/TLS</option>
+              <option value="none">Nessuna</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div style={s.grid2}>
+        <Field label="Username" value={smtp.username} onChange={(v) => setSmtp((f) => ({ ...f, username: v }))} />
+        <Field label="Password" value={smtp.password} onChange={(v) => setSmtp((f) => ({ ...f, password: v }))} type="password" />
+      </div>
+
+      <div style={s.grid2}>
+        <Field label="Email mittente" value={smtp.from_email} onChange={(v) => setSmtp((f) => ({ ...f, from_email: v }))} />
+        <Field label="Nome mittente" value={smtp.from_name} onChange={(v) => setSmtp((f) => ({ ...f, from_name: v }))} />
+      </div>
+
+      <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+        <button onClick={save} disabled={saving} style={s.btnPrimary}>
+          {saving ? "Salvataggio…" : "Salva configurazione"}
+        </button>
+      </div>
+
+      {/* Test email */}
+      <div style={{ borderTop: "1px solid #EDE0CC", paddingTop: 14, marginTop: 4 }}>
+        <p style={{ ...s.fieldLabel, marginBottom: 8 }}>Invia email di test</p>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input
+            type="email"
+            placeholder="email@esempio.com"
+            value={testEmail}
+            onChange={(e) => setTestEmail(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && sendTest()}
+            style={{ ...s.input, flex: 1, minWidth: 200 }}
+          />
+          <button onClick={sendTest} disabled={testing} style={{ ...s.btnPrimary, background: "#1C1C1A" }}>
+            {testing ? "Invio…" : "Invia test"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
