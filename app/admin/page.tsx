@@ -2,6 +2,13 @@
 import { useState, useEffect } from "react";
 import type { Business, StaffRole } from "../../lib/types";
 
+function adminFetchGlobal(url: string, init?: RequestInit) {
+  const token = sessionStorage.getItem("admin_token") ?? "";
+  const headers = new Headers(init?.headers);
+  headers.set("x-admin-token", token);
+  return fetch(url, { ...init, headers });
+}
+
 type StaffMember = { id: number; username: string; role: StaffRole; name: string };
 type StaffForm = { name: string; username: string; password: string; role: StaffRole };
 
@@ -71,6 +78,8 @@ export default function AdminPage() {
     setLocating(false);
   };
 
+  const adminFetch = adminFetchGlobal;
+
   const checkAuth = async () => {
     setAuthLoading(true); setAuthError("");
     try {
@@ -84,6 +93,7 @@ export default function AdminPage() {
         setAuthError(d.error ?? "Errore");
       } else {
         sessionStorage.setItem("admin_authed", "1");
+        sessionStorage.setItem("admin_token", password);
         setAuthed(true);
       }
     } catch { setAuthError("Errore di connessione"); }
@@ -97,7 +107,7 @@ export default function AdminPage() {
   useEffect(() => {
     if (!authed) return;
     setLoading(true);
-    fetch("/admin/api/businesses")
+    adminFetch("/admin/api/businesses")
       .then((r) => r.json())
       .then((d) => { setBusinesses(d); setLoading(false); })
       .catch(() => setLoading(false));
@@ -108,7 +118,7 @@ export default function AdminPage() {
     const fd = new FormData();
     fd.append("file", file);
     try {
-      const res = await fetch("/admin/api/upload", { method: "POST", body: fd });
+      const res = await adminFetch("/admin/api/upload", { method: "POST", body: fd });
       const d = await res.json();
       if (d.url) setForm((f) => ({ ...f, logo_url: d.url }));
       else setError(d.error ?? "Upload fallito");
@@ -138,13 +148,13 @@ export default function AdminPage() {
     try {
       let res: Response;
       if (editing === "new") {
-        res = await fetch("/admin/api/businesses", {
+        res = await adminFetch("/admin/api/businesses", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(form),
         });
       } else {
-        res = await fetch(`/admin/api/businesses/${editing}`, {
+        res = await adminFetch(`/admin/api/businesses/${editing}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(form),
@@ -197,7 +207,7 @@ export default function AdminPage() {
           <h1 style={s.title}>⚙️ Super Admin</h1>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <button onClick={startCreate} style={s.btnPrimary}>+ Nuovo business</button>
-            <button onClick={() => { sessionStorage.removeItem("admin_authed"); setAuthed(false); }} style={s.btnGhost}>Esci</button>
+            <button onClick={() => { sessionStorage.removeItem("admin_authed"); sessionStorage.removeItem("admin_token"); setAuthed(false); }} style={s.btnGhost}>Esci</button>
           </div>
         </div>
 
@@ -354,7 +364,7 @@ function StaffPanel({ businessId }: { businessId: string }) {
 
   const reload = () => {
     setLoading(true);
-    fetch(`/admin/api/businesses/${businessId}/staff`)
+    adminFetchGlobal(`/admin/api/businesses/${businessId}/staff`)
       .then((r) => r.json())
       .then((d) => { setStaff(d); setLoading(false); })
       .catch(() => setLoading(false));
@@ -377,13 +387,13 @@ function StaffPanel({ businessId }: { businessId: string }) {
     try {
       let res: Response;
       if (editingId === "new") {
-        res = await fetch(`/admin/api/businesses/${businessId}/staff`, {
+        res = await adminFetchGlobal(`/admin/api/businesses/${businessId}/staff`, {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(form),
         });
       } else {
         const body: Partial<StaffForm> = { name: form.name, username: form.username, role: form.role };
         if (form.password.trim()) body.password = form.password.trim();
-        res = await fetch(`/admin/api/businesses/${businessId}/staff/${editingId}`, {
+        res = await adminFetchGlobal(`/admin/api/businesses/${businessId}/staff/${editingId}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
         });
       }
@@ -397,7 +407,7 @@ function StaffPanel({ businessId }: { businessId: string }) {
 
   const remove = async (id: number) => {
     if (!confirm("Eliminare questo utente?")) return;
-    await fetch(`/admin/api/businesses/${businessId}/staff/${id}`, { method: "DELETE" });
+    await adminFetchGlobal(`/admin/api/businesses/${businessId}/staff/${id}`, { method: "DELETE" });
     reload();
   };
 

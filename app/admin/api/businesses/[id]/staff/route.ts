@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { hashSync } from "bcryptjs";
 
 export async function GET(
   _req: NextRequest,
@@ -33,7 +34,7 @@ export async function POST(
     .insert({
       business_id: id,
       username: body.username.trim(),
-      password: body.password.trim(),
+      password: hashSync(body.password.trim(), 10),
       role: body.role,
       name: body.name?.trim() ?? body.username.trim(),
     })
