@@ -1337,6 +1337,22 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
   const [activeSlug, setActiveSlug] = useState(urlSlug);
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(null);
   const [activeShift, setActiveShift] = useState<DeliveryShift | null>(null);
+  const [orderCount, setOrderCount] = useState(0);
+
+  useEffect(() => {
+    if (!user || user.role === "delivery") return;
+    const fetchCount = () => {
+      fetch(`/${activeSlug}/api/orders`).then(r => r.json()).then((data: Order[]) => {
+        setOrderCount(data.filter(o => o.status === "new" || o.status === "ready").length);
+      }).catch(() => {});
+    };
+    fetchCount();
+    const channel = supabase
+      .channel(`order-count-${activeSlug}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "orders" }, fetchCount)
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [activeSlug, user]);
 
   useEffect(() => {
     fetch(`/${activeSlug}/api/settings`)
@@ -1405,7 +1421,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
             <span className="role-badge">{roleBadge[user.role]}</span>
           </div>
           <nav className="shop__tabs">
-            <button className={`shop__tab${tab === "orders" ? " shop__tab--active" : ""}`} onClick={() => setTab("orders")}>📋 Ordini</button>
+            <button className={`shop__tab${tab === "orders" ? " shop__tab--active" : ""}`} onClick={() => setTab("orders")}>📋 Ordini{orderCount > 0 && user.role !== "delivery" && <span className="order-count-badge">{orderCount}</span>}</button>
             {user.role === "delivery" && (
               <button className={`shop__tab${tab === "shift" ? " shop__tab--active" : ""}`} onClick={() => setTab("shift")}>🛵 Turno</button>
             )}
@@ -1481,6 +1497,7 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA;min-height:100vh}
 .shop__tab--active{background:rgba(253,246,236,.18);color:#FDF6EC}
 .shop__tab--logout{color:rgba(255,100,80,.7)}
 .shop__tab--logout:hover{background:rgba(255,100,80,.12);color:#ff6450}
+.order-count-badge{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;margin-left:6px;border-radius:999px;background:#B03A2E;color:#fff;font-size:.65rem;font-weight:700;line-height:1;vertical-align:middle}
 .shop__biz-switcher{display:flex;gap:4px;padding:0 20px 10px;max-width:1200px;margin:0 auto;flex-wrap:wrap}
 .biz-tab{padding:5px 14px;background:rgba(253,246,236,.1);border:1px solid rgba(253,246,236,.15);color:rgba(253,246,236,.55);border-radius:999px;cursor:pointer;font-size:.78rem;font-weight:500;transition:all .15s;white-space:nowrap}
 .biz-tab:hover{background:rgba(253,246,236,.18);color:#FDF6EC}
