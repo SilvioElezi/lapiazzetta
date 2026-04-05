@@ -275,19 +275,146 @@ function OrdersTab({ role, slug, activeShift, onShiftUpdated, staffUser }: {
   );
 }
 
+// ─── INVOICES TAB ──────────────────────────────────────────
+function InvoicesTab({ slug }: { slug: string }) {
+  const eur = (n: number) => "€ " + n.toFixed(2).replace(".", ",");
+  type Inv = { id: string; invoice_number: string | null; invoice_date: string; status: string; total: number; payment_method: string | null; created_at: string; completed_at: string | null; table_id: string | null; employee_id: number | null; invoice_items: { article_name: string; quantity: number; unit_price: number; total_price: number }[] };
+  const [invoices, setInvoices] = useState<Inv[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dateFrom, setDateFrom] = useState(() => new Date().toISOString().split("T")[0]);
+  const [dateTo, setDateTo]     = useState(() => new Date().toISOString().split("T")[0]);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    const params = new URLSearchParams({ dateFrom, dateTo });
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    const res = await fetch(`/${slug}/api/pos/invoices/list?${params}`);
+    if (res.ok) { const d = await res.json(); setInvoices(d.invoices ?? []); }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const totalSales = invoices.filter(i => i.status === "paid").reduce((s, i) => s + Number(i.total), 0);
+  const cashTotal  = invoices.filter(i => i.status === "paid" && i.payment_method === "cash").reduce((s, i) => s + Number(i.total), 0);
+  const cardTotal  = invoices.filter(i => i.status === "paid" && i.payment_method === "card").reduce((s, i) => s + Number(i.total), 0);
+
+  const statusColor = (s: string) => s === "paid" ? "#1B5E20" : s === "cancelled" ? "#B71C1C" : "#8A5E12";
+  const statusBg    = (s: string) => s === "paid" ? "#EBF5EB" : s === "cancelled" ? "#FDECEA" : "#FEF3DB";
+  const statusLabel = (s: string) => s === "paid" ? "Pagata" : s === "cancelled" ? "Annullata" : "Aperta";
+  const pmLabel     = (p: string | null) => p === "card" ? "💳 Carta" : p === "cash" ? "💵 Contanti" : "—";
+
+  return (
+    <div className="tab-content">
+      {/* Filters */}
+      <div className="settings-card">
+        <div className="settings-card__head" style={{flexWrap:"wrap",gap:10}}>
+          <h3 className="settings-card__title">🧾 Storico Fatture</h3>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+            <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}
+              style={{padding:"6px 10px",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".85rem",fontFamily:"inherit"}} />
+            <span style={{color:"#7A7770",fontSize:".85rem"}}>–</span>
+            <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)}
+              style={{padding:"6px 10px",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".85rem",fontFamily:"inherit"}} />
+            <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}
+              style={{padding:"6px 10px",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".85rem",fontFamily:"inherit",background:"#fff"}}>
+              <option value="all">Tutti gli stati</option>
+              <option value="paid">Pagata</option>
+              <option value="open">Aperta</option>
+              <option value="cancelled">Annullata</option>
+            </select>
+            <button className="btn-save-hours" onClick={load}>Filtra</button>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary */}
+      {!loading && invoices.length > 0 && (
+        <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:140,background:"#fff",border:"1px solid #EDE0CC",borderRadius:12,padding:"14px 18px"}}>
+            <p style={{fontSize:".75rem",color:"#7A7770",fontWeight:500}}>Totale vendite</p>
+            <p style={{fontSize:"1.4rem",fontWeight:700,color:"#1C1C1A",fontFamily:"Georgia,serif"}}>{eur(totalSales)}</p>
+          </div>
+          <div style={{flex:1,minWidth:140,background:"#fff",border:"1px solid #EDE0CC",borderRadius:12,padding:"14px 18px"}}>
+            <p style={{fontSize:".75rem",color:"#7A7770",fontWeight:500}}>💵 Contanti</p>
+            <p style={{fontSize:"1.4rem",fontWeight:700,color:"#1C1C1A",fontFamily:"Georgia,serif"}}>{eur(cashTotal)}</p>
+          </div>
+          <div style={{flex:1,minWidth:140,background:"#fff",border:"1px solid #EDE0CC",borderRadius:12,padding:"14px 18px"}}>
+            <p style={{fontSize:".75rem",color:"#7A7770",fontWeight:500}}>💳 Carta</p>
+            <p style={{fontSize:"1.4rem",fontWeight:700,color:"#1C1C1A",fontFamily:"Georgia,serif"}}>{eur(cardTotal)}</p>
+          </div>
+          <div style={{flex:1,minWidth:140,background:"#fff",border:"1px solid #EDE0CC",borderRadius:12,padding:"14px 18px"}}>
+            <p style={{fontSize:".75rem",color:"#7A7770",fontWeight:500}}>Numero fatture</p>
+            <p style={{fontSize:"1.4rem",fontWeight:700,color:"#1C1C1A",fontFamily:"Georgia,serif"}}>{invoices.filter(i=>i.status==="paid").length}</p>
+          </div>
+        </div>
+      )}
+
+      {/* List */}
+      <div className="settings-card" style={{overflow:"hidden"}}>
+        {loading && <p style={{padding:"30px 20px",color:"#7A7770",textAlign:"center",fontSize:".88rem"}}>Caricamento…</p>}
+        {!loading && invoices.length === 0 && <p style={{padding:"40px 20px",color:"#7A7770",textAlign:"center",fontSize:".9rem"}}>Nessuna fattura nel periodo selezionato.</p>}
+        {!loading && invoices.map(inv => (
+          <div key={inv.id} style={{borderBottom:"1px solid #F5EADA"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"12px 16px",cursor:"pointer",background:expandedId===inv.id?"#FAFAF8":"transparent"}}
+              onClick={()=>setExpandedId(expandedId===inv.id ? null : inv.id)}>
+              <span style={{flex:1,fontSize:".8rem",fontWeight:600,color:"#1C1C1A",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                {inv.invoice_number ?? inv.id.slice(0,8)}
+              </span>
+              <span style={{fontSize:".75rem",color:"#7A7770",whiteSpace:"nowrap"}}>{new Date(inv.created_at).toLocaleString("it-IT",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>
+              <span style={{padding:"2px 8px",borderRadius:999,fontSize:".7rem",fontWeight:600,background:statusBg(inv.status),color:statusColor(inv.status),whiteSpace:"nowrap"}}>{statusLabel(inv.status)}</span>
+              <span style={{fontSize:".78rem",color:"#7A7770",whiteSpace:"nowrap"}}>{pmLabel(inv.payment_method)}</span>
+              <span style={{fontSize:".95rem",fontWeight:700,color:"#1C1C1A",whiteSpace:"nowrap",minWidth:60,textAlign:"right"}}>{eur(Number(inv.total))}</span>
+              <span style={{color:"#B0ACA5",fontSize:".75rem"}}>{expandedId===inv.id?"▲":"▼"}</span>
+            </div>
+            {expandedId===inv.id && (
+              <div style={{padding:"8px 20px 14px",background:"#FAFAF8",borderTop:"1px solid #F5EADA"}}>
+                {inv.invoice_items?.map((item, i) => (
+                  <div key={i} style={{display:"flex",alignItems:"baseline",gap:8,padding:"4px 0",fontSize:".83rem",borderBottom:"1px solid #F0EAE0"}}>
+                    <span style={{color:"#B03A2E",fontWeight:700,minWidth:24}}>{item.quantity}×</span>
+                    <span style={{flex:1,color:"#1C1C1A"}}>{item.article_name}</span>
+                    <span style={{color:"#7A7770"}}>{eur(Number(item.unit_price))}</span>
+                    <span style={{fontWeight:600,color:"#1C1C1A",minWidth:50,textAlign:"right"}}>{eur(Number(item.total_price))}</span>
+                  </div>
+                ))}
+                <div style={{display:"flex",justifyContent:"space-between",padding:"8px 0 0",marginTop:4,borderTop:"2px solid #EDE0CC"}}>
+                  <span style={{fontSize:".85rem",fontWeight:700,color:"#7A7770"}}>Totale</span>
+                  <span style={{fontSize:"1rem",fontWeight:700,color:"#1C1C1A"}}>{eur(Number(inv.total))}</span>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── SETTINGS TAB ──────────────────────────────────────────
 function SettingsTab({ slug }: { slug: string }) {
   const [onlineOrders, setOnlineOrders] = useState(true);
+  const [kioskOrders, setKioskOrders] = useState(true);
   const [hours, setHours] = useState<WeekHours | null>(null);
   const [deliveryFee, setDeliveryFee] = useState("0");
+  const [deliveryRadius, setDeliveryRadius] = useState("5");
+  const [receiptNipt, setReceiptNipt] = useState("");
+  const [receiptAddress, setReceiptAddress] = useState("");
+  const [receiptPhone, setReceiptPhone] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved]   = useState(false);
 
   useEffect(() => {
     fetch(`/${slug}/api/settings`).then((r) => r.json()).then((data) => {
       setOnlineOrders(data.online_orders ?? true);
+      setKioskOrders(data.kiosk_orders ?? true);
       setHours(data.hours ?? null);
       setDeliveryFee(data.delivery_fee != null ? String(data.delivery_fee) : "0");
+      setDeliveryRadius(data.delivery_radius != null ? String(data.delivery_radius) : "5");
+      setReceiptNipt(data.receipt_nipt ?? "");
+      setReceiptAddress(data.receipt_address ?? "");
+      setReceiptPhone(data.receipt_phone ?? "");
     });
   }, [slug]);
 
@@ -358,6 +485,78 @@ function SettingsTab({ slug }: { slug: string }) {
             </div>
             <button className="btn-save-hours" onClick={() => saveSetting("delivery_fee", parseFloat(deliveryFee) || 0)}>Salva</button>
           </div>
+        </div>
+      </div>
+
+      <div className="settings-card">
+        <div className="settings-card__head">
+          <div>
+            <h3 className="settings-card__title">Ordini kiosk (tavolo)</h3>
+            <p className="settings-card__sub">Permetti ordini tramite QR code ai tavoli</p>
+          </div>
+          <button
+            className={`toggle-btn${kioskOrders ? " toggle-btn--on" : " toggle-btn--off"}`}
+            onClick={async () => { const next = !kioskOrders; setKioskOrders(next); await saveSetting("kiosk_orders", next); }}
+          >
+            <span className="toggle-btn__dot" />
+            <span className="toggle-btn__label">{kioskOrders ? "Attivi" : "Disattivi"}</span>
+          </button>
+        </div>
+      </div>
+
+      <div className="settings-card">
+        <div className="settings-card__head">
+          <div>
+            <h3 className="settings-card__title">Raggio di consegna</h3>
+            <p className="settings-card__sub">Distanza massima per ordini delivery (km)</p>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,border:"1.5px solid #EDE0CC",borderRadius:8,padding:"6px 10px",background:"#fff"}}>
+              <input
+                type="number" min="1" step="0.5"
+                value={deliveryRadius}
+                onChange={(e) => setDeliveryRadius(e.target.value)}
+                style={{width:50,border:"none",outline:"none",fontSize:".9rem",fontFamily:"inherit",color:"#1C1C1A",background:"transparent"}}
+              />
+              <span style={{fontSize:".85rem",color:"#7A7770"}}>km</span>
+            </div>
+            <button className="btn-save-hours" onClick={() => saveSetting("delivery_radius", parseFloat(deliveryRadius) || 5)}>Salva</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="settings-card">
+        <div className="settings-card__head">
+          <div>
+            <h3 className="settings-card__title">Dati fiscali (ricevuta)</h3>
+            <p className="settings-card__sub">Stampati sulle ricevute e fatture</p>
+          </div>
+          {saved && <span className="saved-badge">✓ Salvato</span>}
+        </div>
+        <div style={{padding:"12px 20px 16px",display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            <label style={{fontSize:".78rem",fontWeight:500,color:"#7A7770"}}>NIPT / P.IVA</label>
+            <input value={receiptNipt} onChange={e=>setReceiptNipt(e.target.value)}
+              placeholder="Es. L12345678A"
+              style={{padding:"8px 12px",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".88rem",fontFamily:"inherit",outline:"none"}}/>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            <label style={{fontSize:".78rem",fontWeight:500,color:"#7A7770"}}>Indirizzo</label>
+            <input value={receiptAddress} onChange={e=>setReceiptAddress(e.target.value)}
+              placeholder="Via Roma 1, Brescia"
+              style={{padding:"8px 12px",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".88rem",fontFamily:"inherit",outline:"none"}}/>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:4}}>
+            <label style={{fontSize:".78rem",fontWeight:500,color:"#7A7770"}}>Telefono</label>
+            <input value={receiptPhone} onChange={e=>setReceiptPhone(e.target.value)}
+              placeholder="+39 030 123456"
+              style={{padding:"8px 12px",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".88rem",fontFamily:"inherit",outline:"none"}}/>
+          </div>
+          <button className="btn-save-hours" onClick={async () => {
+            await saveSetting("receipt_nipt", receiptNipt);
+            await saveSetting("receipt_address", receiptAddress);
+            await saveSetting("receipt_phone", receiptPhone);
+          }} style={{alignSelf:"flex-end"}}>Salva dati fiscali</button>
         </div>
       </div>
 
@@ -1352,9 +1551,9 @@ function HomeTab({ role, slug, orderCount, onNavigate }: {
   role: StaffRole;
   slug: string;
   orderCount: number;
-  onNavigate: (tab: "orders" | "menu" | "settings" | "tables" | "place-order" | "shift" | "shifts") => void;
+  onNavigate: (tab: "orders" | "menu" | "settings" | "tables" | "place-order" | "shift" | "shifts" | "invoices") => void;
 }) {
-  type HomeButton = { icon: string; label: string; tab: "orders" | "menu" | "settings" | "tables" | "place-order" | "shift" | "shifts"; badge?: number; roles: StaffRole[] };
+  type HomeButton = { icon: string; label: string; tab: "orders" | "menu" | "settings" | "tables" | "place-order" | "shift" | "shifts" | "invoices"; badge?: number; roles: StaffRole[] };
 
   const buttons: HomeButton[] = [
     { icon: "📋", label: "Ordini", tab: "orders", badge: orderCount, roles: ["admin", "reception", "delivery"] },
@@ -1363,6 +1562,7 @@ function HomeTab({ role, slug, orderCount, onNavigate }: {
     { icon: "🛵", label: "Turni", tab: "shifts", roles: ["admin"] },
     { icon: "🍕", label: "Menu", tab: "menu", roles: ["admin"] },
     { icon: "🪑", label: "Tavoli", tab: "tables", roles: ["admin"] },
+    { icon: "🧾", label: "Fatture", tab: "invoices", roles: ["admin"] },
     { icon: "⚙️", label: "Impostazioni", tab: "settings", roles: ["admin"] },
   ];
 
@@ -1401,7 +1601,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
       if (stored) setUser(JSON.parse(stored));
     } catch {}
   }, []);
-  const [tab, setTab] = useState<"home" | "orders" | "menu" | "settings" | "tables" | "place-order" | "shift" | "shifts">("home");
+  const [tab, setTab] = useState<"home" | "orders" | "menu" | "settings" | "tables" | "place-order" | "shift" | "shifts" | "invoices">("home");
   const [activeSlug, setActiveSlug] = useState(urlSlug);
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(null);
   const [activeShift, setActiveShift] = useState<DeliveryShift | null>(null);
@@ -1502,6 +1702,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                 <button className={`shop__tab${tab === "shifts" ? " shop__tab--active" : ""}`} onClick={() => setTab("shifts")}>🛵 Turni</button>
                 <button className={`shop__tab${tab === "menu" ? " shop__tab--active" : ""}`} onClick={() => setTab("menu")}>🍕 Menu</button>
                 <button className={`shop__tab${tab === "tables" ? " shop__tab--active" : ""}`} onClick={() => setTab("tables")}>🪑 Tavoli</button>
+                <button className={`shop__tab${tab === "invoices" ? " shop__tab--active" : ""}`} onClick={() => setTab("invoices")}>🧾 Fatture</button>
                 <button className={`shop__tab${tab === "settings" ? " shop__tab--active" : ""}`} onClick={() => setTab("settings")}>⚙️ Impostazioni</button>
               </>
             )}
@@ -1531,13 +1732,14 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         </div>
       )}
       <main className="shop__main">
-        {tab === "home"        && <HomeTab role={user.role} slug={activeSlug} orderCount={orderCount} onNavigate={setTab} />}
+        {tab === "home"        && <HomeTab role={user.role} slug={activeSlug} orderCount={orderCount} onNavigate={(t) => setTab(t)} />}
         {tab === "orders"      && <OrdersTab role={user.role} slug={activeSlug} activeShift={activeShift} onShiftUpdated={fetchActiveShift} staffUser={user} />}
         {tab === "place-order" && (user.role === "reception" || user.role === "admin") && <PlaceOrderTab slug={activeSlug} />}
         {tab === "shift"       && user.role === "delivery" && <ShiftTab slug={activeSlug} staffId={String(user.id)} staffName={user.name} />}
         {tab === "shifts"      && user.role === "admin" && <AdminShiftsTab slug={activeSlug} />}
         {tab === "menu"        && user.role === "admin" && <MenuTab slug={activeSlug} />}
         {tab === "tables"      && user.role === "admin" && <TablesTab slug={activeSlug} />}
+        {tab === "invoices"    && user.role === "admin" && <InvoicesTab slug={activeSlug} />}
         {tab === "settings"    && user.role === "admin" && <SettingsTab slug={activeSlug} />}
       </main>
       <style>{styles}</style>
