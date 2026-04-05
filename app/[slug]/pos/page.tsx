@@ -41,7 +41,7 @@ function calcTotals(cart: CartItem[]) {
 type Article  = { id: string; code: string; name: string; price: number; category: string; vat_rate: number; section: string; description?: string; image_url?: string; order_count?: number; };
 type CartItem = { article: Article; qty: number; };
 type InvItem  = { id: string; article_name: string; quantity: number; unit_price: number; vat_rate: number; total_price: number; };
-type OpenInv  = { id: string; table_id: string | null; total: number; invoice_items?: InvItem[]; };
+type OpenInv  = { id: string; table_id: string | null; total: number; created_at?: string; invoice_items?: InvItem[]; };
 type Section  = { name: string; emoji: string; categories: string[] };
 type PosTab   = "cassa" | "orders" | "menu" | "tables" | "settings" | "shifts" | "shift";
 
@@ -1198,6 +1198,107 @@ function TablesTab({ slug }: { slug: string }) {
   );
 }
 
+// ─── Close Day Modal ─────────────────────────────────────────────────────────
+function CloseDayModal({ slug, userName, onClose, closingDay, setClosingDay }: {
+  slug: string; userName: string; onClose: () => void;
+  closingDay: boolean; setClosingDay: (v: boolean) => void;
+}) {
+  const [summary, setSummary] = useState<{
+    already_closed: boolean; closed_at?: string; date?: string;
+    invoice_count?: number; open_count?: number; cancelled_count?: number;
+    total_sales?: number; total_vat?: number; cash_total?: number; card_total?: number; open_total?: number;
+  } | null>(null);
+  const [loadErr, setLoadErr] = useState("");
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    fetch(`/${slug}/api/pos/close-day`)
+      .then(r => r.json())
+      .then(d => setSummary(d))
+      .catch(() => setLoadErr("Errore caricamento dati"));
+  }, [slug]);
+
+  const doClose = async () => {
+    setClosingDay(true);
+    try {
+      const res = await fetch(`/${slug}/api/pos/close-day`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ closed_by: userName }),
+      });
+      if (!res.ok) { const d = await res.json(); setLoadErr(d.error ?? "Errore"); return; }
+      setDone(true);
+    } catch { setLoadErr("Errore di connessione"); }
+    finally { setClosingDay(false); }
+  };
+
+  const row = (label: string, value: string, color = "#f1f5f9") => (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid #0f172a" }}>
+      <span style={{ color: "#94a3b8", fontSize: 13 }}>{label}</span>
+      <span style={{ color, fontSize: 13, fontWeight: 600 }}>{value}</span>
+    </div>
+  );
+
+  return (
+    <>
+      <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.75)", zIndex: 300 }} onClick={onClose} />
+      <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%,-50%)", zIndex: 301, background: "#1e293b", borderRadius: 18, padding: 24, width: "min(90vw,420px)", maxHeight: "80vh", overflow: "auto", boxShadow: "0 30px 80px #0009", display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <p style={{ color: "#f1f5f9", fontWeight: 700, fontSize: "1.05rem" }}>🔒 Chiudi giornata</p>
+          <button onClick={onClose} style={{ background: "#334155", border: "none", width: 28, height: 28, borderRadius: "50%", color: "#94a3b8", cursor: "pointer", fontSize: ".85rem", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+        </div>
+
+        {loadErr && <p style={{ color: "#ef4444", fontSize: 13 }}>{loadErr}</p>}
+
+        {!summary && !loadErr && <p style={{ color: "#64748b", fontSize: 13, textAlign: "center", padding: 20 }}>Caricamento...</p>}
+
+        {summary?.already_closed && (
+          <div style={{ textAlign: "center", padding: "20px 0" }}>
+            <p style={{ color: "#fbbf24", fontSize: 14, fontWeight: 600 }}>Giornata già chiusa</p>
+            <p style={{ color: "#64748b", fontSize: 12, marginTop: 6 }}>
+              Chiusa alle {summary.closed_at ? new Date(summary.closed_at).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : "—"}
+            </p>
+          </div>
+        )}
+
+        {summary && !summary.already_closed && !done && (
+          <>
+            <p style={{ color: "#64748b", fontSize: 12 }}>Riepilogo del {summary.date}</p>
+            {row("Fatture pagate", String(summary.invoice_count ?? 0))}
+            {row("Fatture aperte", String(summary.open_count ?? 0), (summary.open_count ?? 0) > 0 ? "#fbbf24" : "#f1f5f9")}
+            {row("Fatture annullate", String(summary.cancelled_count ?? 0))}
+            <div style={{ height: 1, background: "#334155" }} />
+            {row("Contanti", eur(summary.cash_total ?? 0), "#4ade80")}
+            {row("Carta", eur(summary.card_total ?? 0), "#60a5fa")}
+            {row("IVA totale", eur(summary.total_vat ?? 0))}
+            <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 0 0", borderTop: "2px solid #166534" }}>
+              <span style={{ color: "#bbf7d0", fontSize: 15, fontWeight: 700 }}>Totale vendite</span>
+              <span style={{ color: "#fff", fontSize: 20, fontWeight: 700 }}>{eur(summary.total_sales ?? 0)}</span>
+            </div>
+            {(summary.open_count ?? 0) > 0 && (
+              <p style={{ color: "#fbbf24", fontSize: 11, background: "rgba(251,191,36,.1)", padding: "8px 10px", borderRadius: 8 }}>
+                Le {summary.open_count} fatture aperte ({eur(summary.open_total ?? 0)}) verranno chiuse automaticamente come contanti.
+              </p>
+            )}
+            <button onClick={doClose} disabled={closingDay}
+              style={{ marginTop: 6, padding: "12px 0", background: closingDay ? "#334155" : "#dc2626", color: "#fff", border: "none", borderRadius: 10, fontSize: 14, fontWeight: 700, cursor: closingDay ? "not-allowed" : "pointer" }}>
+              {closingDay ? "Chiusura in corso..." : "Conferma chiusura giornata"}
+            </button>
+          </>
+        )}
+
+        {done && (
+          <div style={{ textAlign: "center", padding: "20px 0" }}>
+            <p style={{ fontSize: 28 }}>✅</p>
+            <p style={{ color: "#4ade80", fontSize: 15, fontWeight: 700, marginTop: 8 }}>Giornata chiusa con successo</p>
+            <p style={{ color: "#64748b", fontSize: 12, marginTop: 6 }}>Tutte le fatture sono state registrate.</p>
+            <button onClick={onClose} style={{ marginTop: 16, padding: "10px 24px", background: "#166534", color: "#fff", border: "none", borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>Chiudi</button>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
 // ─── MAIN PAGE ────────────────────────────────────────────────────────────────
 export default function POSPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
@@ -1230,6 +1331,8 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
   const [articleError, setArticleError] = useState<string | null>(null);
   const [transferModal, setTransferModal] = useState(false);
   const [myInvoicesModal, setMyInvoicesModal] = useState(false);
+  const [closeDayModal, setCloseDayModal] = useState(false);
+  const [closingDay, setClosingDay] = useState(false);
 
   // Auth
   useEffect(() => {
@@ -1419,11 +1522,11 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
           <a href={`/${slug}/shop`} style={{ padding:"5px 12px", background:"rgba(253,246,236,.08)", border:"none", color:"rgba(253,246,236,.7)", borderRadius:8, cursor:"pointer", fontSize:".78rem", fontWeight:500, textDecoration:"none", display:"inline-flex", alignItems:"center" }}>🏠 Dashboard</a>
           <span style={{ padding:"5px 12px", background:"rgba(22,163,74,.9)", border:"none", color:"#fff", borderRadius:8, fontSize:".78rem", fontWeight:700 }}>💰 Cassa</span>
           <span style={{ width:1, height:20, background:"#334155", margin:"0 4px" }}/>
-          {/* Opsione buttons */}
-          <button onClick={()=>setMyInvoicesModal(true)} style={{ padding:"5px 10px", background:"rgba(253,246,236,.08)", border:"none", color:"rgba(253,246,236,.6)", borderRadius:8, cursor:"pointer", fontSize:".72rem", fontWeight:500 }}>🧾 Faturat e Mia</button>
-          <button onClick={()=>{ /* TODO: close day */ }} style={{ padding:"5px 10px", background:"rgba(253,246,236,.08)", border:"none", color:"rgba(253,246,236,.6)", borderRadius:8, cursor:"pointer", fontSize:".72rem", fontWeight:500 }}>🔒 Mbyll Ditën</button>
-          {selTable && (
-            <button onClick={()=>setTransferModal(true)} style={{ padding:"5px 10px", background:"rgba(253,246,236,.08)", border:"none", color:"rgba(253,246,236,.6)", borderRadius:8, cursor:"pointer", fontSize:".72rem", fontWeight:500 }}>🔄 Transfero</button>
+          {/* Opzioni */}
+          <button onClick={()=>setMyInvoicesModal(true)} style={{ padding:"5px 10px", background:"rgba(253,246,236,.08)", border:"none", color:"rgba(253,246,236,.6)", borderRadius:8, cursor:"pointer", fontSize:".72rem", fontWeight:500 }}>🧾 Le mie fatture</button>
+          <button onClick={()=>setCloseDayModal(true)} style={{ padding:"5px 10px", background:"rgba(253,246,236,.08)", border:"none", color:"rgba(253,246,236,.6)", borderRadius:8, cursor:"pointer", fontSize:".72rem", fontWeight:500 }}>🔒 Chiudi giornata</button>
+          {selTable && openInvId && (
+            <button onClick={()=>setTransferModal(true)} style={{ padding:"5px 10px", background:"rgba(253,246,236,.08)", border:"none", color:"rgba(253,246,236,.6)", borderRadius:8, cursor:"pointer", fontSize:".72rem", fontWeight:500 }}>🔄 Trasferisci</button>
           )}
         </nav>
         <span style={{ color:"rgba(253,246,236,.5)", fontSize:".78rem", whiteSpace:"nowrap" }}>{user.name}</span>
@@ -1460,7 +1563,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
             {/* LEFT: Categories (blue section) */}
             <div className={`pos-sidebar${cassaMobile==="tavoli"?" pos-sidebar--hidden":""}`} style={{ width:168, background:"#1e293b", display:"flex", flexDirection:"column", borderRight:"1px solid #0f172a", overflow:"hidden" }}>
               <div style={{ background:"#166534", padding:"5px 10px", fontSize:10, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#bbf7d0", textAlign:"center" }}>
-                Kategoritë
+                Categorie
               </div>
               {/* Sections */}
               {sections.length > 0 && (
@@ -1495,7 +1598,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
             {/* CENTER: Products grid (yellow section) */}
             <div className={`pos-art${(cassaMobile==="conto"||cassaMobile==="tavoli") ? " pos-art--hidden" : ""}`} style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
               <div className="pos-search-bar" style={{ background:"#166534", padding:"8px 12px", fontSize:12, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#bbf7d0", display:"flex", alignItems:"center", gap:10 }}>
-                <span style={{ flex:1 }}>Produktet</span>
+                <span style={{ flex:1 }}>Prodotti</span>
                 <input className="pos-search" value={search} onChange={e=>{ setSearch(e.target.value); setSelCat("all"); }} placeholder="🔍  Cerca…"
                   style={{ background:"#14532d", border:"1px solid #15803d", borderRadius:6, padding:"4px 10px", color:"#f0fdf4", fontSize:12, width:160, outline:"none" }}/>
               </div>
@@ -1528,17 +1631,17 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
               )}
             </div>
 
-            {/* RIGHT: Order panel — Porosia (pink) + Faturat per tavolinën (purple) */}
+            {/* RIGHT: Order panel — Ordine (pink) + Faturat per tavolinën (purple) */}
             <div className={`pos-invoice${cassaMobile==="menu" ? " pos-invoice--hidden" : ""}`} style={{ width:300, display:"flex", flexDirection:"column", background:"#1e293b", borderLeft:"1px solid #0f172a" }}>
-              {/* Porosia header */}
+              {/* Ordine header */}
               <div style={{ background:"#166534", padding:"8px 12px", fontSize:12, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#bbf7d0" }}>
-                {selTable?`Porosia — ${selTable.name}`:"Porosia"}
+                {selTable?`Ordine — ${selTable.name}`:"Ordine"}
               </div>
               {/* Order items table header */}
               <div style={{ display:"flex", padding:"3px 8px", background:"#0f172a", color:"#64748b", fontSize:10, fontWeight:700 }}>
-                <span style={{ flex:1 }}>Produkti</span>
-                <span style={{ width:40, textAlign:"center" }}>Sasia</span>
-                <span style={{ width:60, textAlign:"right" }}>Çmimi</span>
+                <span style={{ flex:1 }}>Prodotto</span>
+                <span style={{ width:40, textAlign:"center" }}>Qtà</span>
+                <span style={{ width:60, textAlign:"right" }}>Prezzo</span>
               </div>
               {!selTable && <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:"#475569", fontSize:13, padding:20, textAlign:"center" }}>Seleziona un tavolo dalla barra in basso</div>}
               {selTable && (<>
@@ -1584,8 +1687,8 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
                 {/* Faturat per tavolinën (purple section) */}
                 <div style={{ borderTop:"2px solid #166534", background:"#0f172a" }}>
                   <div style={{ background:"#166534", padding:"4px 10px", fontSize:10, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#bbf7d0", display:"flex", justifyContent:"space-between" }}>
-                    <span>Faturat per tavolinën</span>
-                    <span>Totali i tavolinës</span>
+                    <span>Fatture del tavolo</span>
+                    <span>Totale tavolo</span>
                   </div>
                   <div style={{ maxHeight:100, overflowY:"auto", fontSize:11 }}>
                     {/* Header */}
@@ -1596,7 +1699,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
                       <span style={{width:60, textAlign:"right"}}>Totali</span>
                     </div>
                     {tableInvoices.length === 0 && (
-                      <p style={{ color:"#475569", textAlign:"center", padding:"8px 0", fontSize:10 }}>Asnjë faturë</p>
+                      <p style={{ color:"#475569", textAlign:"center", padding:"8px 0", fontSize:10 }}>Nessuna fattura</p>
                     )}
                     {tableInvoices.map((inv, i) => (
                       <div key={inv.id} style={{ display:"flex", padding:"3px 8px", color:"#94a3b8", borderBottom:"1px solid #1e293b" }}>
@@ -1625,7 +1728,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
 
           {/* Bottom: Tables bar — green buttons (orange section) */}
           <div className="pos-tablebar" style={{ height:90, minHeight:90, background:"#1e293b", borderTop:"2px solid #166534", flexShrink:0, display:"flex", alignItems:"center", padding:"0 12px", gap:8, overflowX:"auto" }}>
-            <span style={{ color:"#4ade80", fontSize:11, fontWeight:700, letterSpacing:1, textTransform:"uppercase", whiteSpace:"nowrap", marginRight:4 }}>Tavolinat</span>
+            <span style={{ color:"#4ade80", fontSize:11, fontWeight:700, letterSpacing:1, textTransform:"uppercase", whiteSpace:"nowrap", marginRight:4 }}>Tavoli</span>
             {tables.filter(t=>t.active).map(t => {
               const inv = invMap[t.id]; const occupied = !!inv; const isActive = selTable?.id===t.id;
               const label = t.name.replace(/[^0-9]/g,"")||t.name;
@@ -1704,10 +1807,10 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
               <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.75)", zIndex:300 }} onClick={()=>setTransferModal(false)}/>
               <div style={{ position:"fixed", top:"50%", left:"50%", transform:"translate(-50%,-50%)", zIndex:301, background:"#1e293b", borderRadius:18, padding:24, width:"min(90vw,380px)", maxHeight:"80vh", overflow:"auto", boxShadow:"0 30px 80px #0009", display:"flex", flexDirection:"column", gap:14 }}>
                 <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                  <p style={{ color:"#f1f5f9", fontWeight:700, fontSize:"1.05rem" }}>🔄 Transfero faturën</p>
+                  <p style={{ color:"#f1f5f9", fontWeight:700, fontSize:"1.05rem" }}>🔄 Trasferisci fattura</p>
                   <button onClick={()=>setTransferModal(false)} style={{background:"#334155",border:"none",width:28,height:28,borderRadius:"50%",color:"#94a3b8",cursor:"pointer",fontSize:".85rem",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
                 </div>
-                <p style={{ color:"#64748b", fontSize:13 }}>Nga: <strong style={{color:"#f1f5f9"}}>{selTable.name}</strong> — Zgjidh tavolinën e re:</p>
+                <p style={{ color:"#64748b", fontSize:13 }}>Da: <strong style={{color:"#f1f5f9"}}>{selTable.name}</strong> — Seleziona il nuovo tavolo:</p>
                 <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(70px,1fr))", gap:8 }}>
                   {tables.filter(t=>t.active && t.id !== selTable.id).map(t => {
                     const label = t.name.replace(/[^0-9]/g,"")||t.name;
@@ -1725,35 +1828,50 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
           )}
 
           {/* My invoices modal */}
-          {myInvoicesModal && (
-            <>
-              <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.75)", zIndex:300 }} onClick={()=>setMyInvoicesModal(false)}/>
-              <div style={{ position:"fixed", top:"50%", left:"50%", transform:"translate(-50%,-50%)", zIndex:301, background:"#1e293b", borderRadius:18, padding:24, width:"min(90vw,420px)", maxHeight:"80vh", overflow:"auto", boxShadow:"0 30px 80px #0009", display:"flex", flexDirection:"column", gap:14 }}>
-                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                  <p style={{ color:"#f1f5f9", fontWeight:700, fontSize:"1.05rem" }}>🧾 Faturat e Mia</p>
-                  <button onClick={()=>setMyInvoicesModal(false)} style={{background:"#334155",border:"none",width:28,height:28,borderRadius:"50%",color:"#94a3b8",cursor:"pointer",fontSize:".85rem",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-                </div>
-                <div style={{ fontSize:11, color:"#64748b", fontWeight:700, display:"flex", padding:"4px 0", borderBottom:"1px solid #334155" }}>
-                  <span style={{width:30}}>Nr</span>
-                  <span style={{flex:1}}>Tavolinë</span>
-                  <span style={{width:60, textAlign:"right"}}>Totali</span>
-                  <span style={{width:60, textAlign:"center"}}>Status</span>
-                </div>
-                {openInvoices.length === 0 && <p style={{ color:"#475569", textAlign:"center", padding:"20px 0", fontSize:13 }}>Asnjë faturë e hapur</p>}
-                {openInvoices.map((inv, i) => {
-                  const tbl = tables.find(t=>t.id===inv.table_id);
-                  return (
-                    <div key={inv.id} style={{ display:"flex", alignItems:"center", padding:"6px 0", borderBottom:"1px solid #0f172a", fontSize:12 }}>
-                      <span style={{width:30, color:"#64748b"}}>{i+1}</span>
-                      <span style={{flex:1, color:"#f1f5f9", fontWeight:500}}>{tbl?.name ?? "—"}</span>
-                      <span style={{width:60, textAlign:"right", color:"#fcd34d", fontWeight:700}}>{eur(inv.total)}</span>
-                      <span style={{width:60, textAlign:"center", fontSize:10, color:"#4ade80"}}>Hapur</span>
+          {myInvoicesModal && (()=>{
+            const grandTotal = openInvoices.reduce((s, inv) => s + inv.total, 0);
+            return (
+              <>
+                <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.75)", zIndex:300 }} onClick={()=>setMyInvoicesModal(false)}/>
+                <div style={{ position:"fixed", top:"50%", left:"50%", transform:"translate(-50%,-50%)", zIndex:301, background:"#1e293b", borderRadius:18, padding:24, width:"min(90vw,440px)", maxHeight:"80vh", overflow:"auto", boxShadow:"0 30px 80px #0009", display:"flex", flexDirection:"column", gap:14 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                    <p style={{ color:"#f1f5f9", fontWeight:700, fontSize:"1.05rem" }}>🧾 Le mie fatture</p>
+                    <button onClick={()=>setMyInvoicesModal(false)} style={{background:"#334155",border:"none",width:28,height:28,borderRadius:"50%",color:"#94a3b8",cursor:"pointer",fontSize:".85rem",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                  </div>
+                  <div style={{ fontSize:11, color:"#64748b", fontWeight:700, display:"flex", padding:"4px 0", borderBottom:"1px solid #334155" }}>
+                    <span style={{width:28}}>Nr</span>
+                    <span style={{flex:1}}>Tavolo</span>
+                    <span style={{width:50, textAlign:"center"}}>Ora</span>
+                    <span style={{width:65, textAlign:"right"}}>Totale</span>
+                    <span style={{width:50, textAlign:"center"}}>Stato</span>
+                  </div>
+                  {openInvoices.length === 0 && <p style={{ color:"#475569", textAlign:"center", padding:"20px 0", fontSize:13 }}>Nessuna fattura aperta</p>}
+                  {openInvoices.map((inv, i) => {
+                    const tbl = tables.find(t=>t.id===inv.table_id);
+                    const time = inv.created_at ? new Date(inv.created_at).toLocaleTimeString("it-IT", {hour:"2-digit", minute:"2-digit"}) : "—";
+                    return (
+                      <div key={inv.id} style={{ display:"flex", alignItems:"center", padding:"6px 0", borderBottom:"1px solid #0f172a", fontSize:12 }}>
+                        <span style={{width:28, color:"#64748b"}}>{i+1}</span>
+                        <span style={{flex:1, color:"#f1f5f9", fontWeight:500}}>{tbl?.name ?? "—"}</span>
+                        <span style={{width:50, textAlign:"center", color:"#94a3b8", fontSize:11}}>{time}</span>
+                        <span style={{width:65, textAlign:"right", color:"#fcd34d", fontWeight:700}}>{eur(inv.total)}</span>
+                        <span style={{width:50, textAlign:"center", fontSize:10, color:"#4ade80"}}>Aperta</span>
+                      </div>
+                    );
+                  })}
+                  {openInvoices.length > 0 && (
+                    <div style={{ display:"flex", justifyContent:"space-between", padding:"10px 0 0", borderTop:"2px solid #166534" }}>
+                      <span style={{ color:"#bbf7d0", fontSize:14, fontWeight:700 }}>Totale giornata</span>
+                      <span style={{ color:"#fff", fontSize:18, fontWeight:700 }}>{eur(grandTotal)}</span>
                     </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
+                  )}
+                </div>
+              </>
+            );
+          })()}
+
+          {/* Close day modal */}
+          {closeDayModal && <CloseDayModal slug={slug} userName={user?.name ?? "Staff"} onClose={() => { setCloseDayModal(false); loadTables(); }} closingDay={closingDay} setClosingDay={setClosingDay} />}
         </div>
       )}
 
