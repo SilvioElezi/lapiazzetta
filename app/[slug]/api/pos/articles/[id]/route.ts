@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 const ALLOWED = [
   "name", "description", "price", "category_label", "section_name",
   "image_url", "options", "vat_rate_id", "show_cassa", "show_kiosk",
-  "show_online", "active", "sort_order",
+  "show_online", "active", "sort_order", "quantity_on_hand",
 ];
 
 export async function PATCH(

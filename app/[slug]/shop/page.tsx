@@ -275,6 +275,107 @@ function OrdersTab({ role, slug, activeShift, onShiftUpdated, staffUser }: {
   );
 }
 
+// ─── INVENTORY TAB ─────────────────────────────────────────
+function InventoryTab({ slug }: { slug: string }) {
+  const eur = (n: number) => "€ " + n.toFixed(2).replace(".", ",");
+  type ArtStock = { id: string; code: string; name: string; category_label: string | null; section_name: string | null; quantity_on_hand: number | null; active: boolean; price: number };
+  const [articles, setArticles] = useState<ArtStock[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [editing, setEditing] = useState<{ id: string; qty: string } | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const load = async () => {
+    setLoading(true);
+    const res = await fetch(`/${slug}/api/pos/inventory`);
+    if (res.ok) { const d = await res.json(); setArticles(d.articles ?? []); }
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const saveQty = async (id: string, qty: number) => {
+    setSaving(true);
+    await fetch(`/${slug}/api/pos/articles/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ quantity_on_hand: qty }),
+    });
+    setSaving(false); setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+    setArticles(prev => prev.map(a => a.id === id ? { ...a, quantity_on_hand: qty } : a));
+    setEditing(null);
+  };
+
+  const filtered = articles.filter(a =>
+    !search || a.name.toLowerCase().includes(search.toLowerCase()) || (a.category_label ?? "").toLowerCase().includes(search.toLowerCase())
+  );
+
+  const grouped: Record<string, ArtStock[]> = {};
+  for (const a of filtered) {
+    const cat = a.category_label ?? "Varie";
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(a);
+  }
+
+  const qtyColor = (q: number | null) => q === null ? "#7A7770" : q <= 0 ? "#B71C1C" : q <= 5 ? "#8A5E12" : "#1B5E20";
+  const qtyBg    = (q: number | null) => q === null ? "#F5EADA" : q <= 0 ? "#FDECEA" : q <= 5 ? "#FEF3DB" : "#EBF5EB";
+
+  return (
+    <div className="tab-content">
+      <div className="settings-card">
+        <div className="settings-card__head" style={{flexWrap:"wrap",gap:10}}>
+          <div>
+            <h3 className="settings-card__title">📦 Magazzino</h3>
+            <p className="settings-card__sub">Scorte correnti per articolo</p>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            {saved && <span className="saved-badge">✓ Salvato</span>}
+            {saving && <span className="saving-badge">Salvataggio…</span>}
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Cerca articolo…"
+              style={{padding:"7px 12px",border:"1.5px solid #EDE0CC",borderRadius:8,fontSize:".85rem",fontFamily:"inherit",width:180,outline:"none"}} />
+          </div>
+        </div>
+      </div>
+
+      {loading && <p style={{textAlign:"center",color:"#7A7770",padding:30,fontSize:".88rem"}}>Caricamento…</p>}
+      {!loading && filtered.length === 0 && <p style={{textAlign:"center",color:"#7A7770",padding:40,fontSize:".9rem"}}>Nessun articolo trovato.</p>}
+
+      {!loading && Object.entries(grouped).map(([cat, arts]) => (
+        <div key={cat} className="settings-card" style={{overflow:"hidden"}}>
+          <div style={{padding:"10px 16px",background:"#F5EADA",borderBottom:"1px solid #EDE0CC"}}>
+            <h4 style={{fontSize:".85rem",fontWeight:700,color:"#1C1C1A"}}>{cat}</h4>
+          </div>
+          {arts.map(a => (
+            <div key={a.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 16px",borderBottom:"1px solid #F5EADA"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <p style={{fontSize:".88rem",fontWeight:500,color:"#1C1C1A",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.name}</p>
+                <p style={{fontSize:".72rem",color:"#7A7770"}}>{eur(a.price)} · {a.code}</p>
+              </div>
+              {editing?.id === a.id ? (
+                <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <input type="number" value={editing.qty} onChange={e=>setEditing({id:a.id,qty:e.target.value})}
+                    autoFocus
+                    style={{width:70,padding:"5px 8px",border:"1.5px solid #B03A2E",borderRadius:6,fontSize:".88rem",fontFamily:"inherit",textAlign:"center",outline:"none"}}
+                    onKeyDown={e=>{if(e.key==="Enter") saveQty(a.id,parseFloat(editing.qty)||0); if(e.key==="Escape") setEditing(null);}} />
+                  <button onClick={()=>saveQty(a.id,parseFloat(editing.qty)||0)} style={{padding:"5px 10px",background:"#1B5E20",color:"#fff",border:"none",borderRadius:6,fontSize:".78rem",cursor:"pointer",fontWeight:600}}>✓</button>
+                  <button onClick={()=>setEditing(null)} style={{padding:"5px 8px",background:"transparent",border:"1px solid #EDE0CC",borderRadius:6,fontSize:".78rem",cursor:"pointer",color:"#7A7770"}}>✕</button>
+                </div>
+              ) : (
+                <button onClick={()=>setEditing({id:a.id,qty:String(a.quantity_on_hand ?? 0)})}
+                  style={{padding:"4px 14px",borderRadius:20,fontSize:".78rem",fontWeight:700,border:"none",cursor:"pointer",background:qtyBg(a.quantity_on_hand),color:qtyColor(a.quantity_on_hand),minWidth:50,textAlign:"center"}}>
+                  {a.quantity_on_hand === null ? "—" : a.quantity_on_hand}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── INVOICES TAB ──────────────────────────────────────────
 function InvoicesTab({ slug }: { slug: string }) {
   const eur = (n: number) => "€ " + n.toFixed(2).replace(".", ",");
@@ -1551,9 +1652,9 @@ function HomeTab({ role, slug, orderCount, onNavigate }: {
   role: StaffRole;
   slug: string;
   orderCount: number;
-  onNavigate: (tab: "orders" | "menu" | "settings" | "tables" | "place-order" | "shift" | "shifts" | "invoices") => void;
+  onNavigate: (tab: "orders" | "menu" | "settings" | "tables" | "place-order" | "shift" | "shifts" | "invoices" | "inventory") => void;
 }) {
-  type HomeButton = { icon: string; label: string; tab: "orders" | "menu" | "settings" | "tables" | "place-order" | "shift" | "shifts" | "invoices"; badge?: number; roles: StaffRole[] };
+  type HomeButton = { icon: string; label: string; tab: "orders" | "menu" | "settings" | "tables" | "place-order" | "shift" | "shifts" | "invoices" | "inventory"; badge?: number; roles: StaffRole[] };
 
   const buttons: HomeButton[] = [
     { icon: "📋", label: "Ordini", tab: "orders", badge: orderCount, roles: ["admin", "reception", "delivery"] },
@@ -1563,6 +1664,7 @@ function HomeTab({ role, slug, orderCount, onNavigate }: {
     { icon: "🍕", label: "Menu", tab: "menu", roles: ["admin"] },
     { icon: "🪑", label: "Tavoli", tab: "tables", roles: ["admin"] },
     { icon: "🧾", label: "Fatture", tab: "invoices", roles: ["admin"] },
+    { icon: "📦", label: "Magazzino", tab: "inventory", roles: ["admin"] },
     { icon: "⚙️", label: "Impostazioni", tab: "settings", roles: ["admin"] },
   ];
 
@@ -1601,7 +1703,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
       if (stored) setUser(JSON.parse(stored));
     } catch {}
   }, []);
-  const [tab, setTab] = useState<"home" | "orders" | "menu" | "settings" | "tables" | "place-order" | "shift" | "shifts" | "invoices">("home");
+  const [tab, setTab] = useState<"home" | "orders" | "menu" | "settings" | "tables" | "place-order" | "shift" | "shifts" | "invoices" | "inventory">("home");
   const [activeSlug, setActiveSlug] = useState(urlSlug);
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(null);
   const [activeShift, setActiveShift] = useState<DeliveryShift | null>(null);
@@ -1703,6 +1805,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
                 <button className={`shop__tab${tab === "menu" ? " shop__tab--active" : ""}`} onClick={() => setTab("menu")}>🍕 Menu</button>
                 <button className={`shop__tab${tab === "tables" ? " shop__tab--active" : ""}`} onClick={() => setTab("tables")}>🪑 Tavoli</button>
                 <button className={`shop__tab${tab === "invoices" ? " shop__tab--active" : ""}`} onClick={() => setTab("invoices")}>🧾 Fatture</button>
+                <button className={`shop__tab${tab === "inventory" ? " shop__tab--active" : ""}`} onClick={() => setTab("inventory")}>📦 Magazzino</button>
                 <button className={`shop__tab${tab === "settings" ? " shop__tab--active" : ""}`} onClick={() => setTab("settings")}>⚙️ Impostazioni</button>
               </>
             )}
@@ -1740,6 +1843,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         {tab === "menu"        && user.role === "admin" && <MenuTab slug={activeSlug} />}
         {tab === "tables"      && user.role === "admin" && <TablesTab slug={activeSlug} />}
         {tab === "invoices"    && user.role === "admin" && <InvoicesTab slug={activeSlug} />}
+        {tab === "inventory"   && user.role === "admin" && <InventoryTab slug={activeSlug} />}
         {tab === "settings"    && user.role === "admin" && <SettingsTab slug={activeSlug} />}
       </main>
       <style>{styles}</style>
