@@ -1384,7 +1384,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
   const logout = () => { localStorage.removeItem("shop_user"); setUser(null); };
 
   if (!authChecked) return null;
-  if (!user) return <><LoginScreen onLogin={u=>{setUser(u);setTab(u.role==="delivery"?"orders":"cassa");}} slug={slug}/><style>{shopStyles}</style></>;
+  if (!user) return <><LoginScreen onLogin={u=>{setUser(u);setTab("cassa");}} slug={slug}/><style>{shopStyles}</style></>;
 
   const roleBadge: Record<StaffRole,string> = { reception:"🧑‍💼 Receptionist", delivery:"🛵 Fattorino", admin:"👑 Admin" };
   const isCassa = tab === "cassa";
@@ -1397,21 +1397,10 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
         <span style={{ fontFamily:"Georgia,serif", fontSize:"1rem", fontWeight:700, color:"#FDF6EC", whiteSpace:"nowrap" }}>🍕 La Piazzetta</span>
         <span style={{ fontSize:".7rem", fontWeight:500, padding:"3px 9px", borderRadius:999, background:"rgba(253,246,236,.12)", color:"rgba(253,246,236,.7)", whiteSpace:"nowrap" }}>{roleBadge[user.role]}</span>
         <nav className="pos-nav" style={{ display:"flex", gap:4, flexWrap:"wrap", flex:1 }}>
-          {(user.role==="admin"||user.role==="reception") && (
-            <button onClick={()=>setTab("cassa")} style={{ padding:"6px 12px", background:tab==="cassa"?"rgba(22,163,74,.9)":"rgba(253,246,236,.08)", border:"none", color:tab==="cassa"?"#fff":"rgba(253,246,236,.7)", borderRadius:8, cursor:"pointer", fontSize:".8rem", fontWeight:tab==="cassa"?700:500 }}>
-              💰 Cassa{articles.length>0?` (${articles.length})`:""}
-            </button>
-          )}
-          <button onClick={()=>setTab("orders")} style={{ padding:"6px 12px", background:tab==="orders"?"rgba(22,163,74,.9)":"rgba(253,246,236,.08)", border:"none", color:tab==="orders"?"#fff":"rgba(253,246,236,.7)", borderRadius:8, cursor:"pointer", fontSize:".8rem", fontWeight:tab==="orders"?700:500 }}>📋 Ordini</button>
-          {user.role==="delivery" && (
-            <button onClick={()=>setTab("shift")} style={{ padding:"6px 12px", background:tab==="shift"?"rgba(22,163,74,.9)":"rgba(253,246,236,.08)", border:"none", color:tab==="shift"?"#fff":"rgba(253,246,236,.7)", borderRadius:8, cursor:"pointer", fontSize:".8rem", fontWeight:tab==="shift"?700:500 }}>🛵 Turno</button>
-          )}
-          {user.role==="admin" && (<>
-            <button onClick={()=>setTab("shifts")} style={{ padding:"6px 12px", background:tab==="shifts"?"rgba(22,163,74,.9)":"rgba(253,246,236,.08)", border:"none", color:tab==="shifts"?"#fff":"rgba(253,246,236,.7)", borderRadius:8, cursor:"pointer", fontSize:".8rem", fontWeight:tab==="shifts"?700:500 }}>🛵 Turni</button>
-            <button onClick={()=>setTab("menu")} style={{ padding:"6px 12px", background:tab==="menu"?"rgba(22,163,74,.9)":"rgba(253,246,236,.08)", border:"none", color:tab==="menu"?"#fff":"rgba(253,246,236,.7)", borderRadius:8, cursor:"pointer", fontSize:".8rem", fontWeight:tab==="menu"?700:500 }}>🍕 Menu</button>
-            <button onClick={()=>setTab("tables")} style={{ padding:"6px 12px", background:tab==="tables"?"rgba(22,163,74,.9)":"rgba(253,246,236,.08)", border:"none", color:tab==="tables"?"#fff":"rgba(253,246,236,.7)", borderRadius:8, cursor:"pointer", fontSize:".8rem", fontWeight:tab==="tables"?700:500 }}>🪑 Tavoli</button>
-            <button onClick={()=>setTab("settings")} style={{ padding:"6px 12px", background:tab==="settings"?"rgba(22,163,74,.9)":"rgba(253,246,236,.08)", border:"none", color:tab==="settings"?"#fff":"rgba(253,246,236,.7)", borderRadius:8, cursor:"pointer", fontSize:".8rem", fontWeight:tab==="settings"?700:500 }}>⚙️ Impostazioni</button>
-          </>)}
+          <a href={`/${slug}/shop`} style={{ padding:"6px 12px", background:"rgba(253,246,236,.08)", border:"none", color:"rgba(253,246,236,.7)", borderRadius:8, cursor:"pointer", fontSize:".8rem", fontWeight:500, textDecoration:"none", display:"inline-flex", alignItems:"center" }}>🏠 Dashboard</a>
+          <span style={{ padding:"6px 12px", background:"rgba(22,163,74,.9)", border:"none", color:"#fff", borderRadius:8, fontSize:".8rem", fontWeight:700 }}>
+            💰 Cassa
+          </span>
         </nav>
         <span style={{ color:"rgba(253,246,236,.5)", fontSize:".8rem", whiteSpace:"nowrap" }}>{user.name}</span>
         <button onClick={logout} style={{ background:"none", border:"1px solid #334155", color:"#94a3b8", borderRadius:6, padding:"4px 10px", cursor:"pointer", fontSize:12, whiteSpace:"nowrap" }}>🚪 Esci</button>
@@ -1699,19 +1688,7 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
         </div>
       )}
 
-      {/* ── SHOP TABS ── */}
-      {!isCassa && (
-        <div style={{ flex:1, overflowY:"auto" }}>
-          <div style={{ maxWidth:1200, margin:"0 auto", padding:20 }}>
-            {tab==="orders"  && <OrdersTab role={user.role} slug={slug} activeShift={activeShift} onShiftUpdated={fetchActiveShift} staffUser={user}/>}
-            {tab==="shift"   && user.role==="delivery" && <ShiftTab slug={slug} staffId={String(user.id)} staffName={user.name}/>}
-            {tab==="shifts"      && user.role==="admin" && <AdminShiftsTab slug={slug}/>}
-            {tab==="menu"        && user.role==="admin" && <MenuTab slug={slug}/>}
-            {tab==="tables"      && user.role==="admin" && <TablesTab slug={slug}/>}
-            {tab==="settings"    && user.role==="admin" && <SettingsTab slug={slug}/>}
-          </div>
-        </div>
-      )}
+      {/* Non-cassa tabs removed — use /shop Dashboard instead */}
 
       <style>{shopStyles}</style>
     </div>
