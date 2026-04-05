@@ -1347,6 +1347,48 @@ function TablesTab({ slug }: { slug: string }) {
   );
 }
 
+// ─── HOME DASHBOARD ────────────────────────────────────────
+function HomeTab({ role, slug, orderCount, onNavigate }: {
+  role: StaffRole;
+  slug: string;
+  orderCount: number;
+  onNavigate: (tab: "orders" | "menu" | "settings" | "tables" | "place-order" | "shift" | "shifts") => void;
+}) {
+  type HomeButton = { icon: string; label: string; tab: "orders" | "menu" | "settings" | "tables" | "place-order" | "shift" | "shifts"; badge?: number; roles: StaffRole[] };
+
+  const buttons: HomeButton[] = [
+    { icon: "📋", label: "Ordini", tab: "orders", badge: orderCount, roles: ["admin", "reception", "delivery"] },
+    { icon: "🧾", label: "Nuovo Ordine", tab: "place-order", roles: ["admin", "reception"] },
+    { icon: "🛵", label: "Turno", tab: "shift", roles: ["delivery"] },
+    { icon: "🛵", label: "Turni", tab: "shifts", roles: ["admin"] },
+    { icon: "🍕", label: "Menu", tab: "menu", roles: ["admin"] },
+    { icon: "🪑", label: "Tavoli", tab: "tables", roles: ["admin"] },
+    { icon: "⚙️", label: "Impostazioni", tab: "settings", roles: ["admin"] },
+  ];
+
+  const visible = buttons.filter(b => b.roles.includes(role));
+
+  return (
+    <div className="home-dashboard">
+      <div className="home-dashboard__grid">
+        {visible.map((b) => (
+          <button key={b.tab} className="home-btn" onClick={() => onNavigate(b.tab)}>
+            <span className="home-btn__icon">{b.icon}</span>
+            <span className="home-btn__label">{b.label}</span>
+            {(b.badge ?? 0) > 0 && <span className="home-btn__badge">{b.badge}</span>}
+          </button>
+        ))}
+        {(role === "admin" || role === "reception") && (
+          <a href={`/${slug}/pos`} className="home-btn home-btn--link">
+            <span className="home-btn__icon">🖥️</span>
+            <span className="home-btn__label">Cassa POS</span>
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── ROOT PAGE ──────────────────────────────────────────────
 export default function ShopPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug: urlSlug } = use(params);
@@ -1359,7 +1401,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
       if (stored) setUser(JSON.parse(stored));
     } catch {}
   }, []);
-  const [tab, setTab] = useState<"orders" | "menu" | "settings" | "tables" | "place-order" | "shift" | "shifts">("orders");
+  const [tab, setTab] = useState<"home" | "orders" | "menu" | "settings" | "tables" | "place-order" | "shift" | "shifts">("home");
   const [activeSlug, setActiveSlug] = useState(urlSlug);
   const [subscriptionExpiresAt, setSubscriptionExpiresAt] = useState<string | null>(null);
   const [activeShift, setActiveShift] = useState<DeliveryShift | null>(null);
@@ -1410,13 +1452,13 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
   const handleLogin = (u: StaffUser) => {
     setUser(u);
     setActiveSlug(urlSlug);
-    setTab("orders");
+    setTab("home");
   };
   const logout = () => { localStorage.removeItem("shop_user"); setUser(null); setActiveShift(null); };
 
   const switchBusiness = (s: string) => {
     setActiveSlug(s);
-    setTab("orders");
+    setTab("home");
     setSubscriptionExpiresAt(null);
     setActiveShift(null);
   };
@@ -1447,6 +1489,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
             <span className="role-badge">{roleBadge[user.role]}</span>
           </div>
           <nav className="shop__tabs">
+            <button className={`shop__tab${tab === "home" ? " shop__tab--active" : ""}`} onClick={() => setTab("home")}>🏠 Home</button>
             <button className={`shop__tab${tab === "orders" ? " shop__tab--active" : ""}`} onClick={() => setTab("orders")}>📋 Ordini{orderCount > 0 && user.role !== "delivery" && <span className="order-count-badge">{orderCount}</span>}</button>
             {user.role === "delivery" && (
               <button className={`shop__tab${tab === "shift" ? " shop__tab--active" : ""}`} onClick={() => setTab("shift")}>🛵 Turno</button>
@@ -1488,6 +1531,7 @@ export default function ShopPage({ params }: { params: Promise<{ slug: string }>
         </div>
       )}
       <main className="shop__main">
+        {tab === "home"        && <HomeTab role={user.role} slug={activeSlug} orderCount={orderCount} onNavigate={setTab} />}
         {tab === "orders"      && <OrdersTab role={user.role} slug={activeSlug} activeShift={activeShift} onShiftUpdated={fetchActiveShift} staffUser={user} />}
         {tab === "place-order" && (user.role === "reception" || user.role === "admin") && <PlaceOrderTab slug={activeSlug} />}
         {tab === "shift"       && user.role === "delivery" && <ShiftTab slug={activeSlug} staffId={String(user.id)} staffName={user.name} />}
@@ -1659,4 +1703,14 @@ body{font-family:'DM Sans',sans-serif;background:#F5EADA;min-height:100vh}
 .handover-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;background:#FEF3DB;border:1.5px solid #F9DC7D;border-radius:12px;flex-wrap:wrap}
 .handover-banner__title{font-size:.9rem;font-weight:600;color:#8A5E12;margin-bottom:3px}
 .handover-banner__sub{font-size:.8rem;color:#8A5E12}
+.home-dashboard{padding:20px 0}
+.home-dashboard__grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px}
+.home-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:28px 16px;background:#fff;border:2px solid #EDE0CC;border-radius:16px;cursor:pointer;transition:all .2s;position:relative;text-decoration:none;font-family:inherit}
+.home-btn:hover{border-color:#B03A2E;background:#FFF8F6;transform:translateY(-2px);box-shadow:0 8px 24px rgba(176,58,46,.12)}
+.home-btn:active{transform:translateY(0)}
+.home-btn--link{color:inherit}
+.home-btn__icon{font-size:2.2rem;line-height:1}
+.home-btn__label{font-size:.92rem;font-weight:600;color:#1C1C1A;text-align:center}
+.home-btn__badge{position:absolute;top:10px;right:10px;min-width:22px;height:22px;padding:0 6px;border-radius:999px;background:#B03A2E;color:#fff;font-size:.72rem;font-weight:700;display:flex;align-items:center;justify-content:center}
+@media(max-width:480px){.home-dashboard__grid{grid-template-columns:repeat(2,1fr);gap:12px}.home-btn{padding:22px 12px}.home-btn__icon{font-size:1.8rem}.home-btn__label{font-size:.82rem}}
 `;
