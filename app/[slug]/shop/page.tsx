@@ -104,7 +104,8 @@ function OrdersTab({ role, slug, activeShift, onShiftUpdated, staffUser }: {
 
   const markDelivered = async (id: string) => {
     const order = orders.find((o) => o.id === id);
-    await fetch(`/${slug}/api/order/${id}`, { method: "DELETE" });
+    const qs = staffUser ? `?staffId=${staffUser.id}&staffName=${encodeURIComponent(staffUser.name)}` : "";
+    await fetch(`/${slug}/api/order/${id}${qs}`, { method: "DELETE" });
     // Update active shift total if delivery guy is on shift
     if (activeShift && order && order.order_type !== "kiosk") {
       await fetch(`/${slug}/api/shifts/${activeShift.id}`, {
@@ -114,6 +115,26 @@ function OrdersTab({ role, slug, activeShift, onShiftUpdated, staffUser }: {
       });
       onShiftUpdated?.();
     }
+  };
+
+  const cancelOrder = async (id: string) => {
+    if (!confirm("Sei sicuro di voler annullare questo ordine?")) return;
+    await fetch(`/${slug}/api/order/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "cancel",
+        staffId: staffUser?.id,
+      }),
+    });
+  };
+
+  const revertToNew = async (id: string) => {
+    await fetch(`/${slug}/api/order/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "revert" }),
+    });
   };
 
   const printReceipt = (orderId: string) => {
@@ -232,7 +253,7 @@ function OrdersTab({ role, slug, activeShift, onShiftUpdated, staffUser }: {
                   </button>
                 )}
                 {order.status === "ready" && role === "admin" && (
-                  <button className="action-btn action-btn--ready" onClick={() => markReady(order.id)}
+                  <button className="action-btn action-btn--ready" onClick={() => revertToNew(order.id)}
                     style={{background:"#888"}}>
                     ↩ Rimetti nuovo
                   </button>
@@ -240,6 +261,11 @@ function OrdersTab({ role, slug, activeShift, onShiftUpdated, staffUser }: {
                 <button className="action-btn action-btn--print" onClick={() => printReceipt(order.id)}>
                   🖨 Scontrino
                 </button>
+                {role === "admin" && (
+                  <button className="action-btn action-btn--cancel" onClick={() => cancelOrder(order.id)}>
+                    ✕ Annulla
+                  </button>
+                )}
               </div>
             </div>
           ))}

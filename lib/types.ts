@@ -24,10 +24,16 @@ export type Order = {
   lng?: number;
   items: OrderItem[];
   total: number;
-  status: "new" | "ready";
+  status: "new" | "ready" | "completed" | "cancelled";
   placed_at: string;
   table_name?: string;
   order_type?: "delivery" | "kiosk";
+  completed_by?: number;
+  completed_by_name?: string;
+  completed_at?: string;
+  cancelled_by?: number;
+  cancelled_by_name?: string;
+  cancelled_at?: string;
 };
 
 export type DeliveryShift = {
