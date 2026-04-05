@@ -1228,6 +1228,8 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
   const [openInvId,    setOpenInvId]    = useState<string | null>(null);
   const [loading,      setLoading]      = useState(true);
   const [articleError, setArticleError] = useState<string | null>(null);
+  const [transferModal, setTransferModal] = useState(false);
+  const [myInvoicesModal, setMyInvoicesModal] = useState(false);
 
   // Auth
   useEffect(() => {
@@ -1381,6 +1383,23 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
     } catch { setPayErr("Errore di connessione"); } finally { setPaying(false); }
   }
 
+  async function transferInvoice(targetTable: KioskTable) {
+    if (!selTable || !openInvId) return;
+    setPayErr("");
+    try {
+      const res = await fetch(`/${slug}/api/pos/invoices/${openInvId}`, {
+        method:"PATCH", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ action:"transfer", table_id: targetTable.id }),
+      });
+      if (!res.ok) { const d = await res.json(); setPayErr(d.error ?? "Errore trasferimento"); return; }
+      setCart([]); setSelTable(null); setOpenInvId(null); setTransferModal(false); setCassaMobile("tavoli");
+      await loadTables();
+    } catch { setPayErr("Errore di connessione"); }
+  }
+
+  // Invoices for current table (purple section)
+  const tableInvoices = selTable ? openInvoices.filter(inv => inv.table_id === selTable.id) : [];
+
   const logout = () => { localStorage.removeItem("shop_user"); setUser(null); };
 
   if (!authChecked) return null;
@@ -1390,32 +1409,37 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
   const isCassa = tab === "cassa";
 
   return (
-    <div style={{ height:"100vh", display:"flex", flexDirection:"column", background:"#2a2a28", fontFamily:"system-ui,sans-serif", overflow:"hidden" }}>
+    <div style={{ height:"100vh", display:"flex", flexDirection:"column", background:"#0f172a", fontFamily:"system-ui,sans-serif", overflow:"hidden" }}>
 
-      {/* ── Header — compact BarPRO style ── */}
-      <header style={{ flexShrink:0, background:"#1C1C1A", borderBottom:"2px solid #C62828", display:"flex", alignItems:"center", padding:"0 12px", gap:8, minHeight:44, zIndex:10 }}>
-        <span style={{ fontFamily:"Georgia,serif", fontSize:".95rem", fontWeight:700, color:"#fff", whiteSpace:"nowrap" }}>🍕 La Piazzetta</span>
-        <span style={{ fontSize:".65rem", fontWeight:500, padding:"2px 8px", borderRadius:999, background:"rgba(255,255,255,.1)", color:"rgba(255,255,255,.6)", whiteSpace:"nowrap" }}>{roleBadge[user.role]}</span>
-        <nav className="pos-nav" style={{ display:"flex", gap:4, flex:1 }}>
-          <a href={`/${slug}/shop`} style={{ padding:"5px 12px", background:"rgba(255,255,255,.08)", border:"none", color:"rgba(255,255,255,.7)", borderRadius:4, cursor:"pointer", fontSize:".78rem", fontWeight:500, textDecoration:"none", display:"inline-flex", alignItems:"center" }}>🏠 Dashboard</a>
-          <span style={{ padding:"5px 12px", background:"#C62828", border:"none", color:"#fff", borderRadius:4, fontSize:".78rem", fontWeight:700 }}>
-            💰 Cassa
-          </span>
+      {/* ── Header ── */}
+      <header style={{ flexShrink:0, background:"#1C1C1A", borderBottom:"2px solid #166534", display:"flex", alignItems:"center", padding:"0 12px", gap:8, minHeight:48, zIndex:10 }}>
+        <span style={{ fontFamily:"Georgia,serif", fontSize:".95rem", fontWeight:700, color:"#FDF6EC", whiteSpace:"nowrap" }}>🍕 La Piazzetta</span>
+        <span style={{ fontSize:".65rem", fontWeight:500, padding:"2px 8px", borderRadius:999, background:"rgba(253,246,236,.12)", color:"rgba(253,246,236,.6)", whiteSpace:"nowrap" }}>{roleBadge[user.role]}</span>
+        <nav className="pos-nav" style={{ display:"flex", gap:4, flex:1, alignItems:"center" }}>
+          <a href={`/${slug}/shop`} style={{ padding:"5px 12px", background:"rgba(253,246,236,.08)", border:"none", color:"rgba(253,246,236,.7)", borderRadius:8, cursor:"pointer", fontSize:".78rem", fontWeight:500, textDecoration:"none", display:"inline-flex", alignItems:"center" }}>🏠 Dashboard</a>
+          <span style={{ padding:"5px 12px", background:"rgba(22,163,74,.9)", border:"none", color:"#fff", borderRadius:8, fontSize:".78rem", fontWeight:700 }}>💰 Cassa</span>
+          <span style={{ width:1, height:20, background:"#334155", margin:"0 4px" }}/>
+          {/* Opsione buttons */}
+          <button onClick={()=>setMyInvoicesModal(true)} style={{ padding:"5px 10px", background:"rgba(253,246,236,.08)", border:"none", color:"rgba(253,246,236,.6)", borderRadius:8, cursor:"pointer", fontSize:".72rem", fontWeight:500 }}>🧾 Faturat e Mia</button>
+          <button onClick={()=>{ /* TODO: close day */ }} style={{ padding:"5px 10px", background:"rgba(253,246,236,.08)", border:"none", color:"rgba(253,246,236,.6)", borderRadius:8, cursor:"pointer", fontSize:".72rem", fontWeight:500 }}>🔒 Mbyll Ditën</button>
+          {selTable && (
+            <button onClick={()=>setTransferModal(true)} style={{ padding:"5px 10px", background:"rgba(253,246,236,.08)", border:"none", color:"rgba(253,246,236,.6)", borderRadius:8, cursor:"pointer", fontSize:".72rem", fontWeight:500 }}>🔄 Transfero</button>
+          )}
         </nav>
-        <span style={{ color:"rgba(255,255,255,.5)", fontSize:".78rem", whiteSpace:"nowrap" }}>{user.name}</span>
-        <button onClick={logout} style={{ background:"none", border:"1px solid #555", color:"#aaa", borderRadius:4, padding:"3px 10px", cursor:"pointer", fontSize:11, whiteSpace:"nowrap" }}>🚪 Esci</button>
+        <span style={{ color:"rgba(253,246,236,.5)", fontSize:".78rem", whiteSpace:"nowrap" }}>{user.name}</span>
+        <button onClick={logout} style={{ background:"none", border:"1px solid #334155", color:"#94a3b8", borderRadius:6, padding:"3px 10px", cursor:"pointer", fontSize:11, whiteSpace:"nowrap" }}>🚪 Esci</button>
       </header>
 
-      {/* ── CASSA TAB — BarPRO-style layout ── */}
+      {/* ── CASSA TAB — BarPRO-style layout (dark theme) ── */}
       {isCassa && (
-        <div className="pos-cassa-outer" style={{ flex:1, display:"flex", overflow:"hidden", minHeight:0, flexDirection:"column", background:"#2a2a28" }}>
+        <div className="pos-cassa-outer" style={{ flex:1, display:"flex", overflow:"hidden", minHeight:0, flexDirection:"column", background:"#0f172a" }}>
 
           {/* Main 3-column body */}
           <div className="pos-cassa-body" style={{ flex:1, display:"flex", overflow:"hidden", minHeight:0 }}>
 
             {/* Mobile: tables grid panel */}
             <div className={`pos-tables-mobile${cassaMobile!=="tavoli"?" pos-tables-mobile--hidden":""}`}>
-              <div style={{padding:"12px 14px 6px", color:"#aaa", fontSize:11, fontWeight:700, letterSpacing:1, textTransform:"uppercase"}}>
+              <div style={{padding:"12px 14px 6px", color:"#64748b", fontSize:11, fontWeight:700, letterSpacing:1, textTransform:"uppercase"}}>
                 {selTable ? `✅ Tavolo: ${selTable.name}` : "Seleziona un tavolo"}
               </div>
               <div style={{flex:1, overflowY:"auto", padding:"6px 12px 12px", display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(90px,1fr))", gap:10, alignContent:"start"}}>
@@ -1424,30 +1448,30 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
                   const label = t.name.replace(/[^0-9]/g,"")||t.name;
                   return (
                     <button key={t.id} onClick={()=>selectTable(t)}
-                      style={{height:80, borderRadius:4, border:`2px solid ${isActive?"#fff":occupied?"#f59e0b":"#555"}`, background:isActive?"#1B7A1B":occupied?"#92400e":"#2E7D32", color:"#fff", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:4, WebkitTapHighlightColor:"transparent"}}>
+                      style={{height:80, borderRadius:8, border:`2px solid ${isActive?"#fff":occupied?"#f59e0b":"#334155"}`, background:isActive?"#1d4ed8":occupied?"#92400e":"#1e293b", color:"#fff", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:4, WebkitTapHighlightColor:"transparent"}}>
                       <span style={{fontSize:22, fontWeight:700, lineHeight:1}}>{label}</span>
-                      {occupied ? <span style={{fontSize:10, color:"#fcd34d", fontWeight:600}}>{eur(inv.total)}</span> : <span style={{fontSize:10, color:"rgba(255,255,255,.5)"}}>libero</span>}
+                      {occupied ? <span style={{fontSize:10, color:"#fcd34d", fontWeight:600}}>{eur(inv.total)}</span> : <span style={{fontSize:10, color:"#475569"}}>libero</span>}
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* LEFT: Categories */}
-            <div className={`pos-sidebar${cassaMobile==="tavoli"?" pos-sidebar--hidden":""}`} style={{ width:160, background:"#f5f5f0", display:"flex", flexDirection:"column", borderRight:"2px solid #ccc", overflow:"hidden" }}>
-              <div style={{ background:"#C62828", padding:"6px 10px", fontSize:11, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#fff", textAlign:"center" }}>
+            {/* LEFT: Categories (blue section) */}
+            <div className={`pos-sidebar${cassaMobile==="tavoli"?" pos-sidebar--hidden":""}`} style={{ width:168, background:"#1e293b", display:"flex", flexDirection:"column", borderRight:"1px solid #0f172a", overflow:"hidden" }}>
+              <div style={{ background:"#166534", padding:"5px 10px", fontSize:10, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#bbf7d0", textAlign:"center" }}>
                 Kategoritë
               </div>
               {/* Sections */}
               {sections.length > 0 && (
-                <div style={{ borderBottom:"2px solid #ccc", flexShrink:0 }}>
+                <div style={{ background:"#0f172a", padding:"4px 6px", display:"flex", flexDirection:"column", gap:2, flexShrink:0, borderBottom:"1px solid #0f172a" }}>
                   <button onClick={()=>{ setSelSection(null); setSelCat("all"); setSearch(""); }}
-                    style={{ display:"block", width:"100%", textAlign:"center", padding:"8px 6px", background:selSection===null?"#C62828":"#fff", color:selSection===null?"#fff":"#333", border:"none", borderBottom:"1px solid #ddd", cursor:"pointer", fontSize:12, fontWeight:600 }}>
-                    Tutto
+                    style={{ display:"block", width:"100%", textAlign:"left", padding:"6px 10px", background:selSection===null?"#1d4ed8":"transparent", color:selSection===null?"#fff":"#64748b", border:`1px solid ${selSection===null?"#1d4ed8":"#1e293b"}`, borderRadius:6, cursor:"pointer", fontSize:12, fontWeight:selSection===null?700:400 }}>
+                    🏠 Tutto
                   </button>
                   {sections.map(s => (
                     <button key={s.name} onClick={()=>{ setSelSection(s.name); setSelCat("all"); setSearch(""); }}
-                      style={{ display:"block", width:"100%", textAlign:"center", padding:"8px 6px", background:selSection===s.name?"#C62828":"#fff", color:selSection===s.name?"#fff":"#333", border:"none", borderBottom:"1px solid #ddd", cursor:"pointer", fontSize:12, fontWeight:selSection===s.name?700:400 }}>
+                      style={{ display:"block", width:"100%", textAlign:"left", padding:"6px 10px", background:selSection===s.name?"#1d4ed8":"transparent", color:selSection===s.name?"#fff":"#94a3b8", border:`1px solid ${selSection===s.name?"#1d4ed8":"#1e293b"}`, borderRadius:6, cursor:"pointer", fontSize:12, fontWeight:selSection===s.name?700:400 }}>
                       {s.emoji} {s.name}
                     </button>
                   ))}
@@ -1456,99 +1480,133 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
               {/* Sub-categories */}
               <div style={{ flex:1, overflowY:"auto" }}>
                 <button onClick={()=>{ setSelCat("all"); setSearch(""); }}
-                  style={{ display:"block", width:"100%", textAlign:"center", padding:"10px 8px", background:selCat==="all"?"#E8F5E9":"#fff", color:"#333", border:"none", borderBottom:"1px solid #ddd", cursor:"pointer", fontSize:12, fontWeight:selCat==="all"?700:400 }}>
+                  style={{ display:"block", width:"100%", textAlign:"left", padding:"9px 12px", background:selCat==="all"?"#166534":"transparent", color:selCat==="all"?"#fff":"#94a3b8", border:"none", borderBottom:"1px solid #0f172a", cursor:"pointer", fontSize:12, fontWeight:selCat==="all"?600:400 }}>
                   Tutti
                 </button>
                 {visibleCats.map(c => (
                   <button key={c} onClick={()=>{ setSelCat(c); setSearch(""); }}
-                    style={{ display:"block", width:"100%", textAlign:"center", padding:"10px 8px", background:selCat===c?"#E8F5E9":"#fff", color:"#333", border:"none", borderBottom:"1px solid #ddd", cursor:"pointer", fontSize:12, fontWeight:selCat===c?700:400 }}>
+                    style={{ display:"block", width:"100%", textAlign:"left", padding:"9px 12px", background:selCat===c?"#166534":"transparent", color:selCat===c?"#fff":"#94a3b8", border:"none", borderBottom:"1px solid #0f172a", cursor:"pointer", fontSize:12, fontWeight:selCat===c?600:400 }}>
                     {catLabel(c)}
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* CENTER: Products grid */}
-            <div className={`pos-art${(cassaMobile==="conto"||cassaMobile==="tavoli") ? " pos-art--hidden" : ""}`} style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", background:"#fff" }}>
-              <div className="pos-search-bar" style={{ background:"#C62828", padding:"6px 12px", fontSize:11, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#fff", display:"flex", alignItems:"center", gap:10 }}>
+            {/* CENTER: Products grid (yellow section) */}
+            <div className={`pos-art${(cassaMobile==="conto"||cassaMobile==="tavoli") ? " pos-art--hidden" : ""}`} style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+              <div className="pos-search-bar" style={{ background:"#166534", padding:"8px 12px", fontSize:12, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#bbf7d0", display:"flex", alignItems:"center", gap:10 }}>
                 <span style={{ flex:1 }}>Produktet</span>
-                <input className="pos-search" value={search} onChange={e=>{ setSearch(e.target.value); setSelCat("all"); }} placeholder="Cerca…"
-                  style={{ background:"rgba(255,255,255,.2)", border:"1px solid rgba(255,255,255,.3)", borderRadius:4, padding:"3px 10px", color:"#fff", fontSize:12, width:150, outline:"none" }}/>
+                <input className="pos-search" value={search} onChange={e=>{ setSearch(e.target.value); setSelCat("all"); }} placeholder="🔍  Cerca…"
+                  style={{ background:"#14532d", border:"1px solid #15803d", borderRadius:6, padding:"4px 10px", color:"#f0fdf4", fontSize:12, width:160, outline:"none" }}/>
               </div>
-              {articleError && <div style={{ margin:8, padding:8, background:"#FFEBEE", border:"1px solid #EF9A9A", borderRadius:4, color:"#C62828", fontSize:12 }}>⚠ {articleError}</div>}
+              {articleError && <div style={{ margin:12, padding:12, background:"#450a0a", border:"1px solid #991b1b", borderRadius:8, color:"#fca5a5", fontSize:12 }}>⚠ {articleError}</div>}
               {loading ? (
-                <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:"#999" }}>Caricamento…</div>
+                <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:"#64748b" }}>Caricamento…</div>
               ) : (
-                <div style={{ flex:1, overflowY:"auto", padding:8, display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))", gap:6, alignContent:"start" }}>
-                  {filtered.map((a) => {
+                <div style={{ flex:1, overflowY:"auto", padding:10, display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))", gap:8, alignContent:"start" }}>
+                  {filtered.map((a, idx) => {
                     const inCart = cart.find(c=>c.article.id===a.id);
+                    const isTop = idx < 5 && (a.order_count ?? 0) > 0;
                     return (
                       <button key={a.id} onClick={()=>setQtyModal({article:a, qty:1})}
-                        className="pos-product-btn"
-                        style={{ position:"relative", background: inCart?"#E8F5E9":"#f8f8f6", border:`1px solid ${inCart?"#4CAF50":"#ddd"}`, borderRadius:4, padding:"10px 6px", cursor:"pointer", textAlign:"center", WebkitTapHighlightColor:"transparent", transition:"background .1s" }}>
-                        {inCart && <span style={{position:"absolute",top:-4,left:-4,background:"#2E7D32",color:"#fff",fontSize:9,fontWeight:700,borderRadius:999,width:18,height:18,display:"flex",alignItems:"center",justifyContent:"center"}}>{inCart.qty}</span>}
-                        <div style={{ color:"#1a1a1a", fontSize:12, fontWeight:500, lineHeight:1.3, marginBottom:3 }}>{a.name}</div>
-                        <div style={{ color:"#C62828", fontSize:12, fontWeight:700 }}>{eur(a.price)}</div>
+                        style={{ position:"relative", background: inCart?"#dbeafe":"#f8fafc", border:`1px solid ${inCart?"#93c5fd":"#e2e8f0"}`, borderRadius:6, padding:"8px 6px", cursor:"pointer", textAlign:"center", WebkitTapHighlightColor:"transparent" }}
+                        onMouseEnter={e=>{ e.currentTarget.style.background="#dbeafe"; e.currentTarget.style.borderColor="#93c5fd"; }}
+                        onMouseLeave={e=>{ if(!inCart){e.currentTarget.style.background="#f8fafc"; e.currentTarget.style.borderColor="#e2e8f0";} }}>
+                        {isTop && <span style={{position:"absolute",top:-5,right:-5,background:"#f59e0b",color:"#fff",fontSize:9,fontWeight:700,borderRadius:999,padding:"1px 5px",lineHeight:1.4}}>🔥</span>}
+                        {inCart && <span style={{position:"absolute",top:-5,left:-5,background:"#1d4ed8",color:"#fff",fontSize:9,fontWeight:700,borderRadius:999,width:16,height:16,display:"flex",alignItems:"center",justifyContent:"center"}}>{inCart.qty}</span>}
+                        <div style={{ color:"#0f172a", fontSize:11, fontWeight:600, lineHeight:1.3, marginBottom:4 }}>{a.name}</div>
+                        <div style={{ color:"#1d4ed8", fontSize:12, fontWeight:700 }}>{eur(a.price)}</div>
                       </button>
                     );
                   })}
                   {filtered.length===0 && !loading && (
-                    <p style={{ color:"#999", gridColumn:"1/-1", textAlign:"center", marginTop:40, fontSize:13 }}>
-                      {articles.length===0?"Nessun articolo":"Nessun risultato"}
+                    <p style={{ color:"#64748b", gridColumn:"1/-1", textAlign:"center", marginTop:40, fontSize:13 }}>
+                      {articles.length===0?"Nessun articolo nel database":"Nessun risultato"}
                     </p>
                   )}
                 </div>
               )}
             </div>
 
-            {/* RIGHT: Order panel (Porosia) */}
-            <div className={`pos-invoice${cassaMobile==="menu" ? " pos-invoice--hidden" : ""}`} style={{ width:300, display:"flex", flexDirection:"column", background:"#fff", borderLeft:"2px solid #ccc" }}>
-              <div style={{ background:"#C62828", padding:"6px 12px", fontSize:11, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#fff", textAlign:"center" }}>
-                Porosia {selTable ? `— ${selTable.name}` : ""}
+            {/* RIGHT: Order panel — Porosia (pink) + Faturat per tavolinën (purple) */}
+            <div className={`pos-invoice${cassaMobile==="menu" ? " pos-invoice--hidden" : ""}`} style={{ width:300, display:"flex", flexDirection:"column", background:"#1e293b", borderLeft:"1px solid #0f172a" }}>
+              {/* Porosia header */}
+              <div style={{ background:"#166534", padding:"8px 12px", fontSize:12, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#bbf7d0" }}>
+                {selTable?`Porosia — ${selTable.name}`:"Porosia"}
               </div>
               {/* Order items table header */}
-              <div style={{ display:"flex", padding:"4px 8px", background:"#2E7D32", color:"#fff", fontSize:10, fontWeight:700 }}>
+              <div style={{ display:"flex", padding:"3px 8px", background:"#0f172a", color:"#64748b", fontSize:10, fontWeight:700 }}>
                 <span style={{ flex:1 }}>Produkti</span>
                 <span style={{ width:40, textAlign:"center" }}>Sasia</span>
                 <span style={{ width:60, textAlign:"right" }}>Çmimi</span>
               </div>
-              {!selTable && <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:"#999", fontSize:13, padding:20, textAlign:"center" }}>Seleziona un tavolo</div>}
+              {!selTable && <div style={{ flex:1, display:"flex", alignItems:"center", justifyContent:"center", color:"#475569", fontSize:13, padding:20, textAlign:"center" }}>Seleziona un tavolo dalla barra in basso</div>}
               {selTable && (<>
-                <div style={{ flex:1, overflowY:"auto" }}>
-                  {cart.length===0 && <p style={{ color:"#999", textAlign:"center", marginTop:30, fontSize:12 }}>Aggiungi prodotti</p>}
+                <div style={{ flex:1, overflowY:"auto", padding:"0 4px" }}>
+                  {cart.length===0 && <p style={{ color:"#475569", textAlign:"center", marginTop:30, fontSize:12 }}>Aggiungi prodotti dal menu</p>}
                   {cart.map(c => (
-                    <div key={c.article.id} style={{ display:"flex", alignItems:"center", padding:"5px 8px", borderBottom:"1px solid #eee", fontSize:12 }}>
-                      <span style={{ flex:1, color:"#1a1a1a", fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.article.name}</span>
-                      <div style={{ width:40, display:"flex", alignItems:"center", justifyContent:"center", gap:2 }}>
-                        <button onClick={()=>changeQty(c.article.id,-1)} style={{ background:"none", border:"none", color:"#C62828", cursor:"pointer", fontSize:14, fontWeight:700, padding:0, lineHeight:1 }}>−</button>
-                        <span style={{ fontWeight:700, minWidth:16, textAlign:"center" }}>{c.qty}</span>
-                        <button onClick={()=>changeQty(c.article.id, 1)} style={{ background:"none", border:"none", color:"#2E7D32", cursor:"pointer", fontSize:14, fontWeight:700, padding:0, lineHeight:1 }}>+</button>
+                    <div key={c.article.id} style={{ display:"flex", alignItems:"center", gap:4, padding:"5px 4px", borderBottom:"1px solid #0f172a" }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ color:"#f1f5f9", fontSize:12, fontWeight:500, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{c.article.name}</div>
                       </div>
-                      <span style={{ width:60, textAlign:"right", fontWeight:600, color:"#1a1a1a" }}>{eur(c.article.price*c.qty)}</span>
+                      <div style={{ width:40, display:"flex", alignItems:"center", justifyContent:"center", gap:2 }}>
+                        <button onClick={()=>changeQty(c.article.id,-1)} style={{ background:"none", border:"none", color:"#f87171", cursor:"pointer", fontSize:14, fontWeight:700, padding:0, lineHeight:1 }}>−</button>
+                        <span style={{ color:"#f1f5f9", fontWeight:700, minWidth:14, textAlign:"center", fontSize:12 }}>{c.qty}</span>
+                        <button onClick={()=>changeQty(c.article.id, 1)} style={{ background:"none", border:"none", color:"#4ade80", cursor:"pointer", fontSize:14, fontWeight:700, padding:0, lineHeight:1 }}>+</button>
+                      </div>
+                      <span style={{ width:60, textAlign:"right", fontWeight:600, color:"#f1f5f9", fontSize:12 }}>{eur(c.article.price*c.qty)}</span>
                     </div>
                   ))}
                 </div>
-                {/* Totale bar */}
-                <div style={{ background:"#2E7D32", padding:"8px 12px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-                  <span style={{ color:"#fff", fontSize:14, fontWeight:700 }}>Totali:</span>
+                {/* Totali bar */}
+                <div style={{ background:"#166534", padding:"8px 12px", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <span style={{ color:"#bbf7d0", fontSize:14, fontWeight:700 }}>Totali:</span>
                   <span style={{ color:"#fff", fontSize:18, fontWeight:700 }}>{eur(totals.total)}</span>
                 </div>
-                {payErr && <p style={{ color:"#C62828", fontSize:11, textAlign:"center", margin:"4px 8px" }}>{payErr}</p>}
-                {/* Action buttons — BarPRO style */}
-                <div style={{ background:"#f5f5f0", borderTop:"2px solid #ccc", padding:8, display:"flex", flexDirection:"column", gap:6 }}>
-                  <div style={{ display:"flex", gap:6 }}>
+                {payErr && <p style={{ color:"#f87171", fontSize:11, textAlign:"center", margin:"4px 8px" }}>{payErr}</p>}
+                {/* Action buttons */}
+                <div style={{ padding:"8px 8px", borderTop:"1px solid #0f172a", display:"flex", flexDirection:"column", gap:5 }}>
+                  <div style={{ display:"flex", gap:5 }}>
                     {cart.length>0 && (
-                      <button onClick={sendToTable} disabled={sending} style={{ flex:1, background:"#FF8F00", border:"none", color:"#fff", borderRadius:4, padding:"10px 0", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+                      <button onClick={sendToTable} disabled={sending} style={{ flex:1, background:"#92400e", border:"none", color:"#fcd34d", borderRadius:8, padding:"10px 0", fontSize:13, fontWeight:700, cursor:"pointer" }}>
                         {sending?"Invio…":"📤 Invia"}
                       </button>
                     )}
                     {(cart.length>0 || (openInvId && cart.length===0)) && (
-                      <button onClick={()=>setPayModal(true)} style={{ flex:1, background:"#2E7D32", border:"none", color:"#fff", borderRadius:4, padding:"10px 0", fontSize:12, fontWeight:700, cursor:"pointer" }}>
+                      <button onClick={()=>setPayModal(true)} style={{ flex:1, background:"#16a34a", border:"none", color:"#fff", borderRadius:8, padding:"10px 0", fontSize:13, fontWeight:700, cursor:"pointer" }}>
                         🔒 Chiudi · {eur(cart.length>0?totals.total:(invMap[selTable!.id]?.total??0))}
                       </button>
                     )}
                   </div>
-                  <button onClick={()=>{ setSelTable(null); setOpenInvId(null); setCart([]); setCassaMobile("tavoli"); }} style={{ background:"#fff", border:"1px solid #ccc", color:"#666", borderRadius:4, padding:"8px 0", fontSize:11, cursor:"pointer" }}>← Deseleziona tavolo</button>
+                  <button onClick={()=>{ setSelTable(null); setOpenInvId(null); setCart([]); setCassaMobile("tavoli"); }} style={{ background:"#0f172a", border:"1px solid #334155", color:"#94a3b8", borderRadius:8, padding:"8px 0", fontSize:11, cursor:"pointer" }}>← Deseleziona</button>
+                </div>
+
+                {/* Faturat per tavolinën (purple section) */}
+                <div style={{ borderTop:"2px solid #166534", background:"#0f172a" }}>
+                  <div style={{ background:"#166534", padding:"4px 10px", fontSize:10, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#bbf7d0", display:"flex", justifyContent:"space-between" }}>
+                    <span>Faturat per tavolinën</span>
+                    <span>Totali i tavolinës</span>
+                  </div>
+                  <div style={{ maxHeight:100, overflowY:"auto", fontSize:11 }}>
+                    {/* Header */}
+                    <div style={{ display:"flex", padding:"3px 8px", color:"#64748b", fontSize:9, fontWeight:700, borderBottom:"1px solid #1e293b" }}>
+                      <span style={{width:24}}>Nr</span>
+                      <span style={{flex:1}}>Nr.Fature</span>
+                      <span style={{width:50, textAlign:"center"}}>Ora</span>
+                      <span style={{width:60, textAlign:"right"}}>Totali</span>
+                    </div>
+                    {tableInvoices.length === 0 && (
+                      <p style={{ color:"#475569", textAlign:"center", padding:"8px 0", fontSize:10 }}>Asnjë faturë</p>
+                    )}
+                    {tableInvoices.map((inv, i) => (
+                      <div key={inv.id} style={{ display:"flex", padding:"3px 8px", color:"#94a3b8", borderBottom:"1px solid #1e293b" }}>
+                        <span style={{width:24, color:"#64748b"}}>{i+1}</span>
+                        <span style={{flex:1, color:"#f1f5f9", fontWeight:500}}>{inv.id.slice(0,8)}</span>
+                        <span style={{width:50, textAlign:"center"}}>—</span>
+                        <span style={{width:60, textAlign:"right", color:"#fcd34d", fontWeight:600}}>{eur(inv.total)}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </>)}
             </div>
@@ -1565,48 +1623,44 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
             </button>
           </div>
 
-          {/* Bottom: Tables bar — BarPRO green buttons */}
-          <div className="pos-tablebar" style={{ minHeight:70, background:"#f5f5f0", borderTop:"2px solid #C62828", flexShrink:0, display:"flex", flexDirection:"column", overflow:"hidden" }}>
-            <div style={{ background:"#C62828", padding:"3px 12px", fontSize:10, fontWeight:700, letterSpacing:1, textTransform:"uppercase", color:"#fff", textAlign:"center" }}>
-              Tavolinat
-            </div>
-            <div style={{ flex:1, display:"flex", alignItems:"center", padding:"6px 12px", gap:6, overflowX:"auto" }}>
-              {tables.filter(t=>t.active).map(t => {
-                const inv = invMap[t.id]; const occupied = !!inv; const isActive = selTable?.id===t.id;
-                const label = t.name.replace(/[^0-9]/g,"")||t.name;
-                return (
-                  <button key={t.id} onClick={()=>selectTable(t)} title={t.name+(occupied?` — ${eur(inv.total)}`:" — Libero")}
-                    style={{ minWidth:52, height:48, borderRadius:4, border:`2px solid ${isActive?"#1B5E20":"transparent"}`, background:isActive?"#1B5E20":occupied?"#FF8F00":"#2E7D32", color:"#fff", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:1, flexShrink:0 }}>
-                    <span style={{ fontSize:16, fontWeight:700, lineHeight:1 }}>{label}</span>
-                    {occupied && <span style={{ fontSize:8, color:"#FFECB3", fontWeight:600 }}>{eur(inv.total)}</span>}
-                  </button>
-                );
-              })}
-              {tables.filter(t=>t.active).length===0 && <span style={{ color:"#999", fontSize:12 }}>Nessun tavolo</span>}
-            </div>
+          {/* Bottom: Tables bar — green buttons (orange section) */}
+          <div className="pos-tablebar" style={{ height:90, minHeight:90, background:"#1e293b", borderTop:"2px solid #166534", flexShrink:0, display:"flex", alignItems:"center", padding:"0 12px", gap:8, overflowX:"auto" }}>
+            <span style={{ color:"#4ade80", fontSize:11, fontWeight:700, letterSpacing:1, textTransform:"uppercase", whiteSpace:"nowrap", marginRight:4 }}>Tavolinat</span>
+            {tables.filter(t=>t.active).map(t => {
+              const inv = invMap[t.id]; const occupied = !!inv; const isActive = selTable?.id===t.id;
+              const label = t.name.replace(/[^0-9]/g,"")||t.name;
+              return (
+                <button key={t.id} onClick={()=>selectTable(t)} title={t.name+(occupied?` — ${eur(inv.total)}`:" — Libero")}
+                  style={{ minWidth:52, height:64, borderRadius:8, border:`2px solid ${isActive?"#fff":occupied?"#f59e0b":"#334155"}`, background:isActive?"#1d4ed8":occupied?"#92400e":"#0f172a", color:"#fff", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:2, flexShrink:0 }}>
+                  <span style={{ fontSize:18, fontWeight:700, lineHeight:1 }}>{label}</span>
+                  {occupied ? <span style={{ fontSize:9, color:"#fcd34d", fontWeight:600 }}>{eur(inv.total)}</span> : <span style={{ fontSize:9, color:"#475569" }}>libero</span>}
+                </button>
+              );
+            })}
+            {tables.filter(t=>t.active).length===0 && <span style={{ color:"#475569", fontSize:12 }}>Nessun tavolo</span>}
           </div>
 
           {/* Qty picker modal */}
           {qtyModal && (
             <>
-              <div onClick={()=>setQtyModal(null)} style={{position:"fixed",inset:0,zIndex:302,background:"rgba(0,0,0,.5)"}}/>
-              <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",zIndex:303,background:"#fff",borderRadius:12,padding:"20px 24px",width:"min(88vw,300px)",display:"flex",flexDirection:"column",gap:14,boxShadow:"0 20px 60px rgba(0,0,0,.4)"}}>
+              <div onClick={()=>setQtyModal(null)} style={{position:"fixed",inset:0,zIndex:302,background:"rgba(0,0,0,.65)"}}/>
+              <div style={{position:"fixed",top:"50%",left:"50%",transform:"translate(-50%,-50%)",zIndex:303,background:"#1e293b",borderRadius:18,padding:"24px 24px 20px",width:"min(88vw,320px)",display:"flex",flexDirection:"column",gap:16,boxShadow:"0 24px 60px rgba(0,0,0,.7)"}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                   <div>
-                    <p style={{color:"#1a1a1a",fontWeight:700,fontSize:"1rem",lineHeight:1.3}}>{qtyModal.article.name}</p>
-                    <p style={{color:"#888",fontSize:".82rem",marginTop:2}}>{eur(qtyModal.article.price)} cad.</p>
+                    <p style={{color:"#f1f5f9",fontWeight:700,fontSize:"1rem",lineHeight:1.3}}>{qtyModal.article.name}</p>
+                    <p style={{color:"#64748b",fontSize:".82rem",marginTop:3}}>{eur(qtyModal.article.price)} cad.</p>
                   </div>
-                  <button onClick={()=>setQtyModal(null)} style={{background:"#eee",border:"none",width:28,height:28,borderRadius:"50%",color:"#666",cursor:"pointer",fontSize:".85rem",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                  <button onClick={()=>setQtyModal(null)} style={{background:"#334155",border:"none",width:28,height:28,borderRadius:"50%",color:"#94a3b8",cursor:"pointer",fontSize:".85rem",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
                 </div>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:20}}>
                   <button onClick={()=>setQtyModal(p=>p?{...p,qty:Math.max(1,p.qty-1)}:null)}
-                    style={{width:48,height:48,borderRadius:"50%",border:"2px solid #ddd",background:"#f5f5f0",color:"#1a1a1a",fontSize:"1.4rem",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>−</button>
-                  <span style={{color:"#1a1a1a",fontSize:"2rem",fontWeight:700,fontFamily:"Georgia,serif",minWidth:40,textAlign:"center"}}>{qtyModal.qty}</span>
+                    style={{width:52,height:52,borderRadius:"50%",border:"2px solid #334155",background:"#0f172a",color:"#f1f5f9",fontSize:"1.6rem",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>−</button>
+                  <span style={{color:"#f1f5f9",fontSize:"2.2rem",fontWeight:700,fontFamily:"Georgia,serif",minWidth:40,textAlign:"center"}}>{qtyModal.qty}</span>
                   <button onClick={()=>setQtyModal(p=>p?{...p,qty:p.qty+1}:null)}
-                    style={{width:48,height:48,borderRadius:"50%",border:"2px solid #ddd",background:"#f5f5f0",color:"#1a1a1a",fontSize:"1.4rem",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>+</button>
+                    style={{width:52,height:52,borderRadius:"50%",border:"2px solid #334155",background:"#0f172a",color:"#f1f5f9",fontSize:"1.6rem",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>+</button>
                 </div>
                 <button onClick={()=>{ addArticle(qtyModal.article, qtyModal.qty); setQtyModal(null); setCassaMobile("conto"); }}
-                  style={{padding:"12px 0",background:"#2E7D32",border:"none",borderRadius:8,color:"#fff",fontSize:".92rem",fontWeight:700,cursor:"pointer"}}>
+                  style={{padding:"13px 0",background:"#16a34a",border:"none",borderRadius:12,color:"#fff",fontSize:".95rem",fontWeight:700,cursor:"pointer"}}>
                   ✓ Aggiungi {qtyModal.qty} — {eur(qtyModal.article.price * qtyModal.qty)}
                 </button>
               </div>
@@ -1616,30 +1670,87 @@ export default function POSPage({ params }: { params: Promise<{ slug: string }> 
           {/* Payment modal */}
           {payModal && (
             <>
-              <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.6)", zIndex:300 }} onClick={()=>!paying&&setPayModal(false)}/>
-              <div style={{ position:"fixed", top:"50%", left:"50%", transform:"translate(-50%,-50%)", zIndex:301, background:"#fff", borderRadius:12, padding:24, width:320, boxShadow:"0 24px 60px rgba(0,0,0,.4)", display:"flex", flexDirection:"column", gap:14 }}>
+              <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.75)", zIndex:300 }} onClick={()=>!paying&&setPayModal(false)}/>
+              <div style={{ position:"fixed", top:"50%", left:"50%", transform:"translate(-50%,-50%)", zIndex:301, background:"#1e293b", borderRadius:18, padding:28, width:340, boxShadow:"0 30px 80px #0009", display:"flex", flexDirection:"column", gap:16 }}>
                 <div>
-                  <p style={{ color:"#1a1a1a", fontWeight:700, fontSize:18, marginBottom:4 }}>Metodo di pagamento</p>
-                  <p style={{ color:"#888", fontSize:13 }}>{selTable?.name} · {eur(cart.length>0?totals.total:(invMap[selTable!.id]?.total??0))}</p>
+                  <p style={{ color:"#f1f5f9", fontWeight:700, fontSize:20, marginBottom:4 }}>Metodo di pagamento</p>
+                  <p style={{ color:"#64748b", fontSize:13 }}>{selTable?.name} · {eur(cart.length>0?totals.total:(invMap[selTable!.id]?.total??0))}</p>
                 </div>
-                <div style={{ display:"flex", gap:10 }}>
+                <div style={{ display:"flex", gap:12 }}>
                   {(["cash","card"] as const).map(m => (
                     <button key={m} onClick={()=>setPayMethod(m)}
-                      style={{ flex:1, padding:"18px 0", borderRadius:8, fontSize:24, cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:6, background:payMethod===m?"#E8F5E9":"#f8f8f6", border:`2px solid ${payMethod===m?"#2E7D32":"#ddd"}`, color:"#1a1a1a" }}>
+                      style={{ flex:1, padding:"20px 0", borderRadius:12, fontSize:28, cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", gap:6, background:payMethod===m?"#1d4ed8":"#0f172a", border:`2px solid ${payMethod===m?"#60a5fa":"#334155"}`, color:"#fff" }}>
                       <span>{m==="cash"?"💵":"💳"}</span>
-                      <span style={{ fontSize:12, fontWeight:600, color:payMethod===m?"#2E7D32":"#888" }}>{m==="cash"?"Contanti":"Bancomat"}</span>
+                      <span style={{ fontSize:12, fontWeight:600, color:payMethod===m?"#bfdbfe":"#64748b" }}>{m==="cash"?"Contanti":"Bancomat"}</span>
                     </button>
                   ))}
                 </div>
-                {payErr && <p style={{ color:"#C62828", fontSize:12, textAlign:"center" }}>{payErr}</p>}
+                {payErr && <p style={{ color:"#f87171", fontSize:12, textAlign:"center" }}>{payErr}</p>}
                 <button onClick={()=>closeTable(payMethod)} disabled={paying}
-                  style={{ padding:"14px 0", background:"#2E7D32", color:"#fff", border:"none", borderRadius:8, fontSize:16, fontWeight:700, cursor:paying?"wait":"pointer" }}>
-                  {paying ? "Salvo…" : `✅ Conferma`}
+                  style={{ padding:"16px 0", background:"#16a34a", color:"#fff", border:"none", borderRadius:12, fontSize:17, fontWeight:700, cursor:paying?"wait":"pointer" }}>
+                  {paying ? "Salvo…" : `✅ Conferma pagamento`}
                 </button>
                 <button onClick={()=>setPayModal(false)} disabled={paying}
-                  style={{ padding:"8px 0", background:"transparent", color:"#888", border:"none", fontSize:13, cursor:"pointer" }}>
+                  style={{ padding:"10px 0", background:"transparent", color:"#64748b", border:"none", fontSize:13, cursor:"pointer" }}>
                   Annulla
                 </button>
+              </div>
+            </>
+          )}
+
+          {/* Transfer invoice modal */}
+          {transferModal && selTable && openInvId && (
+            <>
+              <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.75)", zIndex:300 }} onClick={()=>setTransferModal(false)}/>
+              <div style={{ position:"fixed", top:"50%", left:"50%", transform:"translate(-50%,-50%)", zIndex:301, background:"#1e293b", borderRadius:18, padding:24, width:"min(90vw,380px)", maxHeight:"80vh", overflow:"auto", boxShadow:"0 30px 80px #0009", display:"flex", flexDirection:"column", gap:14 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <p style={{ color:"#f1f5f9", fontWeight:700, fontSize:"1.05rem" }}>🔄 Transfero faturën</p>
+                  <button onClick={()=>setTransferModal(false)} style={{background:"#334155",border:"none",width:28,height:28,borderRadius:"50%",color:"#94a3b8",cursor:"pointer",fontSize:".85rem",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                </div>
+                <p style={{ color:"#64748b", fontSize:13 }}>Nga: <strong style={{color:"#f1f5f9"}}>{selTable.name}</strong> — Zgjidh tavolinën e re:</p>
+                <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(70px,1fr))", gap:8 }}>
+                  {tables.filter(t=>t.active && t.id !== selTable.id).map(t => {
+                    const label = t.name.replace(/[^0-9]/g,"")||t.name;
+                    return (
+                      <button key={t.id} onClick={()=>transferInvoice(t)}
+                        style={{ height:60, borderRadius:10, border:"2px solid #334155", background:"#0f172a", color:"#fff", cursor:"pointer", display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:3 }}>
+                        <span style={{ fontSize:20, fontWeight:700 }}>{label}</span>
+                        <span style={{ fontSize:9, color:"#64748b" }}>{t.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* My invoices modal */}
+          {myInvoicesModal && (
+            <>
+              <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.75)", zIndex:300 }} onClick={()=>setMyInvoicesModal(false)}/>
+              <div style={{ position:"fixed", top:"50%", left:"50%", transform:"translate(-50%,-50%)", zIndex:301, background:"#1e293b", borderRadius:18, padding:24, width:"min(90vw,420px)", maxHeight:"80vh", overflow:"auto", boxShadow:"0 30px 80px #0009", display:"flex", flexDirection:"column", gap:14 }}>
+                <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                  <p style={{ color:"#f1f5f9", fontWeight:700, fontSize:"1.05rem" }}>🧾 Faturat e Mia</p>
+                  <button onClick={()=>setMyInvoicesModal(false)} style={{background:"#334155",border:"none",width:28,height:28,borderRadius:"50%",color:"#94a3b8",cursor:"pointer",fontSize:".85rem",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                </div>
+                <div style={{ fontSize:11, color:"#64748b", fontWeight:700, display:"flex", padding:"4px 0", borderBottom:"1px solid #334155" }}>
+                  <span style={{width:30}}>Nr</span>
+                  <span style={{flex:1}}>Tavolinë</span>
+                  <span style={{width:60, textAlign:"right"}}>Totali</span>
+                  <span style={{width:60, textAlign:"center"}}>Status</span>
+                </div>
+                {openInvoices.length === 0 && <p style={{ color:"#475569", textAlign:"center", padding:"20px 0", fontSize:13 }}>Asnjë faturë e hapur</p>}
+                {openInvoices.map((inv, i) => {
+                  const tbl = tables.find(t=>t.id===inv.table_id);
+                  return (
+                    <div key={inv.id} style={{ display:"flex", alignItems:"center", padding:"6px 0", borderBottom:"1px solid #0f172a", fontSize:12 }}>
+                      <span style={{width:30, color:"#64748b"}}>{i+1}</span>
+                      <span style={{flex:1, color:"#f1f5f9", fontWeight:500}}>{tbl?.name ?? "—"}</span>
+                      <span style={{width:60, textAlign:"right", color:"#fcd34d", fontWeight:700}}>{eur(inv.total)}</span>
+                      <span style={{width:60, textAlign:"center", fontSize:10, color:"#4ade80"}}>Hapur</span>
+                    </div>
+                  );
+                })}
               </div>
             </>
           )}
@@ -1780,44 +1891,42 @@ const shopStyles = `
 .handover-banner{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;background:#FEF3DB;border:1.5px solid #F9DC7D;border-radius:12px;flex-wrap:wrap}
 .handover-banner__title{font-size:.9rem;font-weight:600;color:#8A5E12;margin-bottom:3px}
 .handover-banner__sub{font-size:.8rem;color:#8A5E12}
-/* ── Product button hover ── */
-.pos-product-btn:hover{background:#E8F5E9!important;border-color:#4CAF50!important}
 /* ── Responsive: POS on smartphones ── */
 @media(max-width:768px){
   .pos-nav{flex-wrap:nowrap!important;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-ms-overflow-style:none;gap:2px!important}
   .pos-nav::-webkit-scrollbar{display:none}
-  .pos-nav button,.pos-nav a,.pos-nav span{font-size:.72rem!important;padding:4px 8px!important;white-space:nowrap;flex-shrink:0}
+  .pos-nav button,.pos-nav a,.pos-nav span{font-size:.72rem!important;padding:5px 8px!important;white-space:nowrap;flex-shrink:0}
   .pos-cassa-body{flex-direction:column!important}
-  .pos-sidebar{width:100%!important;flex-direction:row!important;height:40px;min-height:40px;overflow:hidden;border-right:none!important;border-bottom:2px solid #ccc;flex-shrink:0}
-  .pos-sidebar>div:first-child{display:none!important}
-  .pos-sidebar>div:nth-child(2){flex-direction:row!important;padding:4px!important;gap:2px!important;border-bottom:none!important;flex-shrink:0;overflow-x:auto;scrollbar-width:none}
-  .pos-sidebar>div:nth-child(2)::-webkit-scrollbar{display:none}
-  .pos-sidebar>div:nth-child(2) button{width:auto!important;white-space:nowrap;padding:4px 10px!important;font-size:11px!important}
+  .pos-sidebar{width:100%!important;flex-direction:row!important;height:40px;min-height:40px;overflow:hidden;border-right:none!important;border-bottom:2px solid #0f172a;flex-shrink:0}
+  .pos-sidebar>div:first-child{flex-direction:row!important;padding:4px 4px!important;gap:2px!important;border-bottom:none!important;flex-shrink:0;overflow-x:auto;border-right:2px solid #0f172a;scrollbar-width:none}
+  .pos-sidebar>div:first-child::-webkit-scrollbar{display:none}
+  .pos-sidebar>div:first-child button{width:auto!important;white-space:nowrap;padding:4px 8px!important;font-size:11px!important}
+  .pos-sidebar>div:nth-child(2){display:none!important}
   .pos-sidebar>div:last-child{flex-direction:row!important;overflow-x:auto!important;overflow-y:hidden!important;flex:1;scrollbar-width:none}
   .pos-sidebar>div:last-child::-webkit-scrollbar{display:none}
-  .pos-sidebar>div:last-child button{white-space:nowrap!important;border-bottom:none!important;border-right:1px solid #ddd!important;width:auto!important;padding:4px 10px!important;font-size:11px!important}
+  .pos-sidebar>div:last-child button{white-space:nowrap!important;border-bottom:none!important;border-right:1px solid #0f172a!important;width:auto!important;padding:4px 10px!important;font-size:11px!important}
   .pos-art{flex:1!important}
   .pos-art--hidden{display:none!important}
-  .pos-invoice{width:100%!important;border-left:none!important;border-top:2px solid #ccc;flex:1!important}
+  .pos-invoice{width:100%!important;border-left:none!important;border-top:2px solid #0f172a;flex:1!important}
   .pos-invoice--hidden{display:none!important}
-  .pos-tablebar{min-height:56px!important}
-  .pos-tablebar>div:last-child>button{min-width:44px!important;height:40px!important}
-  .pos-tablebar>div:last-child>button span{font-size:14px!important}
+  .pos-tablebar{height:64px!important;min-height:64px!important}
+  .pos-tablebar>button,
+  .pos-tablebar span{font-size:9px!important}
   .pos-mobile-switch{display:flex!important}
 }
-.pos-mobile-switch{display:none;flex-shrink:0;background:#1C1C1A;border-top:2px solid #C62828}
-.pos-mobile-tab{flex:1;padding:12px 4px;border:none;background:transparent;color:#888;font-size:.85rem;font-weight:600;cursor:pointer;border-top:3px solid transparent;font-family:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;-webkit-tap-highlight-color:transparent}
-.pos-mobile-tab--active{color:#4CAF50;border-top-color:#2E7D32;background:rgba(46,125,50,.15)}
-.pos-tables-mobile{display:none;flex-direction:column;flex:1;overflow:hidden;background:#2a2a28}
+.pos-mobile-switch{display:none;flex-shrink:0;background:#0f172a;border-top:1px solid #166534}
+.pos-mobile-tab{flex:1;padding:14px 4px;border:none;background:transparent;color:#64748b;font-size:.88rem;font-weight:600;cursor:pointer;border-top:3px solid transparent;font-family:inherit;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;-webkit-tap-highlight-color:transparent}
+.pos-mobile-tab--active{color:#4ade80;border-top-color:#16a34a;background:rgba(22,163,74,.1)}
+.pos-tables-mobile{display:none;flex-direction:column;flex:1;overflow:hidden;background:#0f172a}
 @media(max-width:768px){
   .pos-tables-mobile{display:flex}
   .pos-tables-mobile--hidden{display:none!important}
   .pos-tablebar{display:none!important}
   .pos-sidebar--hidden{display:none!important}
-  .pos-search-bar{flex-direction:column!important;padding:8px 12px!important;gap:6px!important;height:auto!important}
+  .pos-search-bar{flex-direction:column!important;padding:10px 12px!important;gap:6px!important;height:auto!important}
   .pos-search-bar span{font-size:11px!important;letter-spacing:.05em!important}
-  .pos-search{width:100%!important;padding:10px 14px!important;font-size:15px!important;border-radius:6px!important;height:44px;background:rgba(255,255,255,.15)!important;border-color:rgba(255,255,255,.2)!important}
-  .pos-mobile-switch{position:fixed!important;bottom:0;left:0;right:0;z-index:50;box-shadow:0 -4px 24px rgba(0,0,0,.4);border-top:2px solid #C62828}
-  .pos-cassa-outer{padding-bottom:58px}
+  .pos-search{width:100%!important;padding:12px 14px!important;font-size:15px!important;border-radius:8px!important;height:44px}
+  .pos-mobile-switch{position:fixed!important;bottom:0;left:0;right:0;z-index:50;box-shadow:0 -4px 24px rgba(0,0,0,.5);border-top:2px solid #166534}
+  .pos-cassa-outer{padding-bottom:62px}
 }
 `;

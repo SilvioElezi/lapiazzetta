@@ -68,6 +68,20 @@ export async function PATCH(
     return NextResponse.json({ ok: true });
   }
 
+  // ── Transfer invoice to another table ────────────────────────────────────
+  if (action === "transfer") {
+    const { table_id: newTableId } = body;
+    if (!newTableId) return NextResponse.json({ error: "No target table" }, { status: 400 });
+
+    const { error: tErr } = await supabaseAdmin
+      .from("invoices")
+      .update({ table_id: newTableId })
+      .eq("id", id);
+
+    if (tErr) return NextResponse.json({ error: tErr.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   // ── Close or cancel ───────────────────────────────────────────────────────
   if (!["paid", "cancelled"].includes(status)) {
     return NextResponse.json({ error: "Invalid status" }, { status: 400 });
